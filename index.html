@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0f62fe" />
+  <title>和英正順PWA</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header>
+  <h1>和英正順アプリ（PWA）</h1>
+  <nav>
+    <button data-tab="practice" class="active">練習</button>
+    <button data-tab="problems">問題</button>
+    <button data-tab="history">履歴</button>
+    <button data-tab="settings">設定</button>
+  </nav>
+</header>
+
+<main>
+  <!-- Practice -->
+  <section id="practice" class="tab active">
+    <div class="card">
+      <div class="label">日本文</div>
+      <div id="jpText" class="jp"></div>
+      <hr/>
+      <div class="label">並べ替え</div>
+      <div id="answerArea" class="answer"></div>
+      <div id="tokenPool" class="pool"></div>
+      <div class="row">
+        <button id="undoBtn">UNDO</button>
+        <button id="resetBtn">RESET</button>
+        <button id="shuffleBtn" class="warn">SHUFFLE</button>
+        <span class="flex"></span>
+        <button id="checkBtn" class="primary">CHECK</button>
+        <button id="nextBtn">次へ</button>
+      </div>
+      <div id="result" class="result"></div>
+      <div id="explanationWrap" class="explain hidden">
+        <div class="label">解説</div>
+        <div id="explanation" class="explanation"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Problems -->
+  <section id="problems" class="tab">
+    <div class="row">
+      <input id="problemSearch" placeholder="日本文/英文で検索">
+      <span class="hint">右上でCSV追加</span>
+      <input id="csvInput" type="file" accept=".csv,text/csv" hidden>
+      <button id="csvBtn">CSVインポート</button>
+    </div>
+    <div id="problemsList" class="list"></div>
+  </section>
+
+  <!-- History -->
+  <section id="history" class="tab">
+    <div class="row">
+      <select id="histFilter">
+        <option value="all">すべて</option>
+        <option value="correct">正解のみ</option>
+        <option value="wrong">不正解のみ</option>
+      </select>
+      <input id="histSearch" placeholder="日本文/英文/解答で検索">
+    </div>
+    <div id="historyList" class="list"></div>
+  </section>
+
+  <!-- Settings -->
+  <section id="settings" class="tab">
+    <div class="card">
+      <h3>OpenAI API キー</h3>
+      <div class="row">
+        <input id="apiKey" placeholder="sk-..." />
+        <button id="saveKeyBtn" class="primary">保存</button>
+        <button id="deleteKeyBtn" class="danger">削除</button>
+      </div>
+      <p class="note">解説生成に使用します。送信内容はOpenAIサーバへ送られます。個人情報は含めないでください。</p>
+    </div>
+    <div class="card">
+      <h3>データ エクスポート/初期化</h3>
+      <div class="row">
+        <button id="exportBtn">JSONを書き出し</button>
+        <button id="resetAllBtn" class="danger">すべて初期化</button>
+      </div>
+    </div>
+    <div class="card">
+      <h3>インストール</h3>
+      <p>iPhoneのSafariでこのページを開き、共有ボタン → 「ホーム画面に追加」でPWAとしてインストールできます。</p>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <span>和英正順PWA v1.0</span>
+  <span class="flex"></span>
+  <a id="installHint" href="#" class="install-hint hidden">ホーム画面に追加</a>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
