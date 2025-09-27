@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0f62fe" />
-  <title>和英正順PWA</title>
+  <title>和英正順PWA v2</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -13,7 +13,7 @@
 </head>
 <body>
 <header>
-  <h1>和英正順アプリ（PWA）</h1>
+  <h1>和英正順アプリ（PWA）v2</h1>
   <nav>
     <button data-tab="practice" class="active">練習</button>
     <button data-tab="problems">問題</button>
@@ -23,7 +23,6 @@
 </header>
 
 <main>
-  <!-- Practice -->
   <section id="practice" class="tab active">
     <div class="card">
       <div class="label">日本文</div>
@@ -40,6 +39,13 @@
         <button id="checkBtn" class="primary">CHECK</button>
         <button id="nextBtn">次へ</button>
       </div>
+      <div class="row tts-row">
+        <button id="speakJPBtn">JP▶︎</button>
+        <button id="speakENBtn">EN▶︎</button>
+        <button id="speakSeqBtn" class="primary">JP→EN▶︎</button>
+        <label class="switch"><input type="checkbox" id="autoplayChk"/><span>自動で次へ</span></label>
+        <button id="stopSpeakBtn" class="danger">停止</button>
+      </div>
       <div id="result" class="result"></div>
       <div id="explanationWrap" class="explain hidden">
         <div class="label">解説</div>
@@ -48,7 +54,6 @@
     </div>
   </section>
 
-  <!-- Problems -->
   <section id="problems" class="tab">
     <div class="row">
       <input id="problemSearch" placeholder="日本文/英文で検索">
@@ -59,7 +64,6 @@
     <div id="problemsList" class="list"></div>
   </section>
 
-  <!-- History -->
   <section id="history" class="tab">
     <div class="row">
       <select id="histFilter">
@@ -72,7 +76,6 @@
     <div id="historyList" class="list"></div>
   </section>
 
-  <!-- Settings -->
   <section id="settings" class="tab">
     <div class="card">
       <h3>OpenAI API キー</h3>
@@ -81,7 +84,25 @@
         <button id="saveKeyBtn" class="primary">保存</button>
         <button id="deleteKeyBtn" class="danger">削除</button>
       </div>
-      <p class="note">解説生成に使用します。送信内容はOpenAIサーバへ送られます。個人情報は含めないでください。</p>
+      <p class="note">解説生成に使用します。個人情報は送信しないでください。</p>
+    </div>
+    <div class="card">
+      <h3>読み上げ（TTS）設定</h3>
+      <div class="row">
+        <label class="slider">
+          JP → EN 開始まで（秒）
+          <input type="range" min="0.5" max="10" step="0.1" id="delayJPEN">
+          <span id="delayJPENVal"></span>
+        </label>
+      </div>
+      <div class="row">
+        <label class="slider">
+          次のJP開始まで（秒）
+          <input type="range" min="0.5" max="10" step="0.1" id="delayNextJP">
+          <span id="delayNextJPVal"></span>
+        </label>
+      </div>
+      <p class="note">JP→EN▶︎ は日本語→待機→英語。自動で次へONで、英語後に待機→次の日本語へ。</p>
     </div>
     <div class="card">
       <h3>データ エクスポート/初期化</h3>
@@ -92,13 +113,13 @@
     </div>
     <div class="card">
       <h3>インストール</h3>
-      <p>iPhoneのSafariでこのページを開き、共有ボタン → 「ホーム画面に追加」でPWAとしてインストールできます。</p>
+      <p>iPhoneのSafariでこのページを開き、共有 → 「ホーム画面に追加」。</p>
     </div>
   </section>
 </main>
 
 <footer>
-  <span>和英正順PWA v1.0</span>
+  <span>和英正順PWA v2</span>
   <span class="flex"></span>
   <a id="installHint" href="#" class="install-hint hidden">ホーム画面に追加</a>
 </footer>
