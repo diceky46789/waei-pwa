@@ -1,5 +1,5 @@
 {
-  "name": "和英正順アプリ（PWA）v2",
+  "name": "和英正順アプリ（PWA）v2 – Native TTS",
   "short_name": "和英正順 v2",
   "start_url": "./",
   "display": "standalone",

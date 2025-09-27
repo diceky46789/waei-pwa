@@ -1,4 +1,3 @@
-
 :root{ --bg:#f7f7fb; --card:#fff; --ink:#111; --sub:#666; --pri:#0f62fe; --warn:#ff8c00; --ok:#0aa; --bad:#c62828; }
 *{ box-sizing:border-box; }
 html,body{ margin:0; padding:0; font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", "Meiryo", sans-serif; color:var(--ink); background:var(--bg); }
