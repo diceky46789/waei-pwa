@@ -1,10 +1,43 @@
 
 // ===== Helpers =====
 const TOKENS = {
-  tokenize(s){ if(!s) return []; let t=s; for(const m of [",",".","!","?",";",";",":","(",")","\"","'","[","]"]) t=t.split(m).join(` ${m} `); return t.split(/\s+/).filter(Boolean); },
-  detokenize(a){ if(!a||!a.length) return ""; let s=a.join(" "); return s.replace(/ \./g,".").replace(/ ,/g,",").replace(/ !/g,"!").replace(/ \?/g,"?").replace(/ ;/g,";").replace(/ :/g,":").replace(/ \)/g,")").replace(/\( /g,"(").replace(/ \]/g,"]").replace(/\[ /g,"[").replace(/ \"/g,'"'); },
-  normalized(s){ return (s||"").toLowerCase().replace(/\s+/g," ").trim(); }
+  tokenize(s){
+    if(!s) return [];
+    let t=s;
+    // NOTE: do NOT split apostrophes so contractions stay as one token.
+    const marks=[",",".","!","?",";",";",":","(",")","\"","[","]"];
+    for(const m of marks) t=t.split(m).join(` ${m} `);
+    // Also keep curly quotes (’ “ ”) untouched for tokens
+    return t.split(/\s+/).filter(Boolean);
+  },
+  detokenize(a){
+    if(!a||!a.length) return "";
+    let s=a.join(" ");
+    s=s.replace(/ \./g,".").replace(/ ,/g,",").replace(/ !/g,"!").replace(/ \?/g,"?")
+       .replace(/ ;/g,";").replace(/ :/g,":").replace(/ \)/g,")").replace(/\( /g,"(")
+       .replace(/ \]/g,"]").replace(/\[ /g,"[").replace(/ \"/g,'"');
+    // Rejoin spaces around apostrophes: I ' m -> I'm, John's -> John's
+    s=s.replace(/(\w)\s+'\s+(\w)/g,"$1'$2");
+    // Also handle curly apostrophes
+    s=s.replace(/(\w)\s+’\s+(\w)/g,"$1’$2");
+    return s;
+  },
+  canonical(s){
+    if(!s) return "";
+    let t=s.normalize ? s.normalize("NFKC") : s;
+    // unify apostrophes / quotes / dashes
+    t=t.replace(/[\u2018\u2019\u02BC\u2032]/g,"'").replace(/[\u201C\u201D]/g,'"').replace(/[\u2013\u2014]/g,"-");
+    // remove spaces around apostrophes within words
+    t=t.replace(/(\w)\s*'\s*(\w)/g,"$1'$2");
+    // tighten common punctuations
+    t=t.replace(/\s+([.,!?;:%)\]\}])/g,"$1").replace(/([(\[\{])\s+/g,"$1");
+    // normalize spaces & case
+    t=t.replace(/\u00A0/g," ").replace(/\s+/g," ").trim().toLowerCase();
+    return t;
+  },
+  normalized(s){ return TOKENS.canonical(s); }
 };
+
 const clamp=(x,min,max)=>Math.max(min,Math.min(max,x));
 
 // ===== Storage =====
@@ -44,7 +77,7 @@ const Store={
   },
   exportJSON(){
     const bundle={exportedAt:new Date().toISOString(),problems:this.problems,history:this.history,delayJPEN:this.delayJPEN,delayNextJP:this.delayNextJP};
-    const blob=new Blob([JSON.stringify(bundle,null,2)],{type:"application/json"}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=`waei_v2_native_tts_export_${Date.now()}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
+    const blob=new Blob([JSON.stringify(bundle,null,2)],{type:"application/json"}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=`waei_v2_fixbold_export_${Date.now()}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
   }
 };
 
@@ -66,41 +99,20 @@ const CSV={
 
 // ===== Voice Picker (Native-first) =====
 const VoicePicker = (()=>{
-  let voicesCache = [];
-  let readyResolve; const ready = new Promise(res=>readyResolve=res);
-
-  function loadVoices(){
-    const v = speechSynthesis.getVoices();
-    if (v && v.length){ voicesCache = v; readyResolve(); }
-  }
-  speechSynthesis.onvoiceschanged = loadVoices;
-  loadVoices();
-
-  function prefer(names=[], langStartsWith=""){
-    for (const n of names){
-      const hit = voicesCache.find(v=> v.name && v.name.toLowerCase().includes(n.toLowerCase()));
-      if (hit) return hit;
-    }
-    if (langStartsWith){
-      const hit = voicesCache.find(v=> v.lang && v.lang.toLowerCase().startsWith(langStartsWith.toLowerCase()));
-      if (hit) return hit;
-    }
+  let voicesCache=[]; let readyResolve; const ready=new Promise(res=>readyResolve=res);
+  function loadVoices(){ const v=speechSynthesis.getVoices(); if(v&&v.length){ voicesCache=v; readyResolve(); } }
+  speechSynthesis.onvoiceschanged=loadVoices; loadVoices();
+  function prefer(names=[], langPrefix=""){
+    for(const n of names){ const hit=voicesCache.find(v=>v.name && v.name.toLowerCase().includes(n.toLowerCase())); if(hit) return hit; }
+    if(langPrefix){ const hit=voicesCache.find(v=>v.lang && v.lang.toLowerCase().startsWith(langPrefix.toLowerCase())); if(hit) return hit; }
     return null;
   }
-
   async function pick(lang){
     await ready;
-    if (lang.startsWith("ja")) {
-      // iOS 日本語: Kyoko / Otoya / その他 ja-*
-      return prefer(["Kyoko","Otoya","Fiona","Hattori"], "ja") || null;
-    }
-    if (lang.startsWith("en")) {
-      // iOS 英語: Samantha / Alex / Ava / Daniel / Karen / Moira / その他 en-*
-      return prefer(["Samantha","Alex","Ava","Daniel","Karen","Moira"], "en") || null;
-    }
-    return voicesCache.find(v=> v.lang && v.lang.toLowerCase().startsWith(lang.toLowerCase())) || null;
+    if(lang.startsWith("ja")) return prefer(["Kyoko","Otoya","Fiona","Hattori"],"ja")||null;
+    if(lang.startsWith("en")) return prefer(["Samantha","Alex","Ava","Daniel","Karen","Moira"],"en")||null;
+    return voicesCache.find(v=>v.lang && v.lang.toLowerCase().startsWith(lang.toLowerCase()))||null;
   }
-
   return { pick, ready };
 })();
 
@@ -111,11 +123,11 @@ const TTS={
   async speak(text,lang){
     await VoicePicker.ready;
     return new Promise(async res=>{
-      const u = new SpeechSynthesisUtterance(text);
-      const voice = await VoicePicker.pick(lang);
-      if (voice) u.voice = voice; else u.lang = lang;
-      u.rate = 1; u.pitch = 1; u.volume = 1;
-      u.onend = ()=>res(); u.onerror = ()=>res();
+      const u=new SpeechSynthesisUtterance(text);
+      const voice=await VoicePicker.pick(lang);
+      if(voice) u.voice=voice; else u.lang=lang;
+      u.rate=1; u.pitch=1; u.volume=1;
+      u.onend=()=>res(); u.onerror=()=>res();
       speechSynthesis.speak(u);
     });
   },
@@ -138,8 +150,7 @@ const Practice={
     UI.setJP(this.current.jp); this.resetTokens(); UI.clearResult();
   },
   setProblemById(id){
-    const p=Store.problems.find(x=>x.id===id);
-    if(!p) return;
+    const p=Store.problems.find(x=>x.id===id); if(!p) return;
     this.current=p; UI.setJP(p.jp); this.resetTokens(); UI.clearResult(); UI.switchTab("practice");
   },
   resetTokens(){
@@ -175,15 +186,12 @@ const Practice={
       });
       if(!resp.ok) throw new Error(await resp.text());
       const data = await resp.json();
-      let text = "";
+      let text="";
       if (data?.output?.content) text = data.output.content.map(c=>c.text||"").join("\n").trim();
       else if (data?.choices?.[0]?.message?.content) text = data.choices[0].message.content;
       UI.setExplanation(text || "（解説の取得に失敗しました）");
-    }catch(e){
-      UI.setExplanation("解説の取得に失敗しました: " + e.message);
-    }finally{
-      UI.showExplaining(false);
-    }
+    }catch(e){ UI.setExplanation("解説の取得に失敗しました: " + e.message); }
+    finally{ UI.showExplaining(false); }
   }
 };
 
@@ -191,7 +199,6 @@ const Practice={
 const UI={
   els:{},
   init(){
-    // Tabs
     document.querySelectorAll("nav button").forEach(btn=>{
       btn.addEventListener("click",()=>{
         document.querySelectorAll("nav button").forEach(b=>b.classList.remove("active"));
@@ -202,7 +209,6 @@ const UI={
       });
     });
 
-    // Practice refs
     this.els.jp=document.getElementById("jpText");
     this.els.pool=document.getElementById("tokenPool");
     this.els.ans=document.getElementById("answerArea");
@@ -216,7 +222,6 @@ const UI={
     document.getElementById("checkBtn").onclick=()=>Practice.check();
     document.getElementById("nextBtn").onclick=()=>Practice.pickRandom();
 
-    // TTS
     document.getElementById("speakJPBtn").onclick=async()=>{ TTS.cancel(); await TTS.speak(Practice.current.jp,"ja-JP"); };
     document.getElementById("speakENBtn").onclick=async()=>{ TTS.cancel(); await TTS.speak(Practice.current.en,"en-US"); };
     document.getElementById("speakSeqBtn").onclick=async()=>{
@@ -235,7 +240,6 @@ const UI={
     document.getElementById("stopSpeakBtn").onclick=()=>{ TTS.autoplay=false; TTS.cancel(); };
     document.getElementById("autoplayChk").onchange=(e)=>{ TTS.autoplay=e.target.checked; if(!TTS.autoplay) TTS.cancel(); };
 
-    // Problems
     this.els.problemsList=document.getElementById("problemsList");
     const pSearch=document.getElementById("problemSearch");
     pSearch.addEventListener("input", ()=>this.refreshProblems(pSearch.value));
@@ -243,15 +247,11 @@ const UI={
     document.getElementById("csvInput").addEventListener("change", async (e)=>{
       const file=e.target.files?.[0]; if(!file) return;
       const text=await file.text();
-      try{
-        const added=Store.importCSVText(text);
-        alert(`インポート成功：${added}件追加`);
-        this.refreshProblems(pSearch.value);
-      }catch(err){ alert("インポート失敗: " + err.message); }
+      try{ const added=Store.importCSVText(text); alert(`インポート成功：${added}件追加`); this.refreshProblems(pSearch.value); }
+      catch(err){ alert("インポート失敗: " + err.message); }
       e.target.value="";
     });
 
-    // History
     this.els.histList=document.getElementById("historyList");
     const histFilter=document.getElementById("histFilter");
     const histSearch=document.getElementById("histSearch");
@@ -259,7 +259,6 @@ const UI={
     histSearch.addEventListener("input", ()=>this.refreshHistory());
     this.els.histFilter=histFilter; this.els.histSearch=histSearch;
 
-    // Settings
     const apiKey=document.getElementById("apiKey");
     document.getElementById("saveKeyBtn").onclick=()=>{ Store.saveApiKey(apiKey.value.trim()); alert("保存しました"); };
     document.getElementById("deleteKeyBtn").onclick=()=>{ Store.saveApiKey(""); apiKey.value=""; alert("削除しました"); };
@@ -271,7 +270,6 @@ const UI={
       }
     };
 
-    // Delay sliders
     const s1=document.getElementById("delayJPEN"), s2=document.getElementById("delayNextJP"),
           v1=document.getElementById("delayJPENVal"), v2=document.getElementById("delayNextJPVal");
     s1.addEventListener("input", ()=>v1.textContent=s1.value+"s");
@@ -280,15 +278,11 @@ const UI={
     s2.addEventListener("change", ()=>Store.setDelayNextJP(s2.value));
     this.els.delayJPEN=s1; this.els.delayNextJP=s2; this.els.delayJPENVal=v1; this.els.delayNextJPVal=v2;
 
-    // Install hint
     const ih=document.getElementById("installHint");
     if (window.matchMedia('(display-mode: standalone)').matches) { ih.classList.add("hidden"); }
     else { ih.classList.remove("hidden"); ih.onclick=()=>alert("Safariの共有ボタン → 『ホーム画面に追加』からインストールできます。"); }
 
-    // SW
-    if ("serviceWorker" in navigator){
-      window.addEventListener("load", ()=> navigator.serviceWorker.register("sw.js"));
-    }
+    if ("serviceWorker" in navigator){ window.addEventListener("load", ()=> navigator.serviceWorker.register("sw.js")); }
 
     Store.load();
   },
@@ -331,36 +325,34 @@ const UI={
     list.forEach(p=>{
       const d=document.createElement("div"); d.className="item";
       d.innerHTML = `<div class="meta">ID: ${p.id}</div><div>${p.jp}</div><div class="en">${p.en}</div>`;
-      // クリックでその問題を開けるようにもしておく（便利）
       d.addEventListener("click", ()=>Practice.setProblemById(p.id));
       this.els.problemsList.appendChild(d);
     });
   },
   refreshHistory(){
-    const filter = this.els.histFilter.value;
-    const key = (this.els.histSearch.value||"").toLowerCase();
-    const base = Store.history || [];
-    const list = base.filter(rec=>{
+    const filter=this.els.histFilter.value;
+    const key=(this.els.histSearch.value||"").toLowerCase();
+    const base=Store.history||[];
+    const list=base.filter(rec=>{
       if (filter==="correct" && !rec.correct) return false;
       if (filter==="wrong" && rec.correct) return false;
       if (!key) return true;
-      const p = Store.problems.find(x=>x.id===rec.problemID);
+      const p=Store.problems.find(x=>x.id===rec.problemID);
       return (p?.jp||"").toLowerCase().includes(key) || (p?.en||"").toLowerCase().includes(key) || (rec.userAnswer||"").toLowerCase().includes(key);
     });
     this.els.histList.innerHTML="";
     list.forEach(rec=>{
-      const p = Store.problems.find(x=>x.id===rec.problemID);
-      const d = document.createElement("div"); d.className="item";
-      const dt = new Date(rec.timestamp);
-      d.innerHTML = `<div class="meta">
-          <span>${rec.correct ? "正解" : "不正解"}</span>
-          <span>${dt.toLocaleDateString()} ${dt.toLocaleTimeString()}</span>
-        </div>
-        <div>${p?.jp || "(削除済み問題)"}</div>
-        <div class="ans">あなたの解答：${rec.userAnswer}</div>
-        <div class="en">正解：${p?.en || ""}</div>`;
-      // 履歴クリックでその問題へジャンプ
-      d.addEventListener("click", ()=>{ if (p?.id) Practice.setProblemById(p.id); });
+      const p=Store.problems.find(x=>x.id===rec.problemID);
+      const d=document.createElement("div"); d.className="item";
+      const dt=new Date(rec.timestamp);
+      d.innerHTML=`<div class="meta">
+        <span>${rec.correct ? "正解" : "不正解"}</span>
+        <span>${dt.toLocaleDateString()} ${dt.toLocaleTimeString()}</span>
+      </div>
+      <div>${p?.jp||"(削除済み問題)"} </div>
+      <div class="ans">あなたの解答：${rec.userAnswer}</div>
+      <div class="en">正解：${p?.en||""}</div>`;
+      d.addEventListener("click", ()=>{ if(p?.id) Practice.setProblemById(p.id); });
       this.els.histList.appendChild(d);
     });
   },
@@ -376,8 +368,10 @@ const UI={
     document.getElementById(id).classList.add("active");
   },
   initDelayControls(d1,d2){
-    this.els.delayJPEN.value=d1; this.els.delayNextJP.value=d2;
-    this.els.delayJPENVal.textContent=d1+"s"; this.els.delayNextJPVal.textContent=d2+"s";
+    document.getElementById("delayJPEN").value=d1;
+    document.getElementById("delayNextJP").value=d2;
+    document.getElementById("delayJPENVal").textContent=d1+"s";
+    document.getElementById("delayNextJPVal").textContent=d2+"s";
   }
 };
 
