@@ -1,13 +1,11 @@
 
-// ===== Helpers =====
+// ===== Helpers (apostrophe-safe) =====
 const TOKENS = {
   tokenize(s){
     if(!s) return [];
     let t=s;
-    // NOTE: do NOT split apostrophes so contractions stay as one token.
-    const marks=[",",".","!","?",";",";",":","(",")","\"","[","]"];
+    const marks=[",",".","!","?",";",";",":","(",")","\"","[","]"]; // keep apostrophes
     for(const m of marks) t=t.split(m).join(` ${m} `);
-    // Also keep curly quotes (’ “ ”) untouched for tokens
     return t.split(/\s+/).filter(Boolean);
   },
   detokenize(a){
@@ -16,28 +14,19 @@ const TOKENS = {
     s=s.replace(/ \./g,".").replace(/ ,/g,",").replace(/ !/g,"!").replace(/ \?/g,"?")
        .replace(/ ;/g,";").replace(/ :/g,":").replace(/ \)/g,")").replace(/\( /g,"(")
        .replace(/ \]/g,"]").replace(/\[ /g,"[").replace(/ \"/g,'"');
-    // Rejoin spaces around apostrophes: I ' m -> I'm, John's -> John's
-    s=s.replace(/(\w)\s+'\s+(\w)/g,"$1'$2");
-    // Also handle curly apostrophes
-    s=s.replace(/(\w)\s+’\s+(\w)/g,"$1’$2");
+    s=s.replace(/(\w)\s+'\s+(\w)/g,"$1'$2").replace(/(\w)\s+’\s+(\w)/g,"$1’$2");
     return s;
   },
-  canonical(s){
+  normalized(s){
     if(!s) return "";
     let t=s.normalize ? s.normalize("NFKC") : s;
-    // unify apostrophes / quotes / dashes
     t=t.replace(/[\u2018\u2019\u02BC\u2032]/g,"'").replace(/[\u201C\u201D]/g,'"').replace(/[\u2013\u2014]/g,"-");
-    // remove spaces around apostrophes within words
     t=t.replace(/(\w)\s*'\s*(\w)/g,"$1'$2");
-    // tighten common punctuations
     t=t.replace(/\s+([.,!?;:%)\]\}])/g,"$1").replace(/([(\[\{])\s+/g,"$1");
-    // normalize spaces & case
     t=t.replace(/\u00A0/g," ").replace(/\s+/g," ").trim().toLowerCase();
     return t;
-  },
-  normalized(s){ return TOKENS.canonical(s); }
+  }
 };
-
 const clamp=(x,min,max)=>Math.max(min,Math.min(max,x));
 
 // ===== Storage =====
@@ -48,6 +37,8 @@ const Store={
     this.apiKey=localStorage.getItem("apiKey")||"";
     this.delayJPEN=clamp(parseFloat(localStorage.getItem("delayJPEN")||"1.0"),0.5,10);
     this.delayNextJP=clamp(parseFloat(localStorage.getItem("delayNextJP")||"2.0"),0.5,10);
+    this.ttsMode=localStorage.getItem("ttsMode")||"audio"; // default to audio
+    this.ttsEndpoint=localStorage.getItem("ttsEndpoint")||"";
 
     if(!this.problems){
       fetch("resources/builtin_problems.csv").then(r=>r.text()).then(txt=>{
@@ -61,6 +52,7 @@ const Store={
 
     UI.setApiKey(this.apiKey);
     UI.initDelayControls(this.delayJPEN,this.delayNextJP);
+    UI.initTTSMode(this.ttsMode,this.ttsEndpoint);
     UI.refreshHistory();
   },
   saveProblems(){ localStorage.setItem("problems",JSON.stringify(this.problems)); },
@@ -68,6 +60,8 @@ const Store={
   saveApiKey(k){ this.apiKey=k; localStorage.setItem("apiKey",k||""); },
   setDelayJPEN(v){ this.delayJPEN=clamp(parseFloat(v)||1.0,0.5,10); localStorage.setItem("delayJPEN",this.delayJPEN); },
   setDelayNextJP(v){ this.delayNextJP=clamp(parseFloat(v)||2.0,0.5,10); localStorage.setItem("delayNextJP",this.delayNextJP); },
+  setTTSMode(m){ this.ttsMode=m; localStorage.setItem("ttsMode",m); },
+  setTTSEndpoint(url){ this.ttsEndpoint=url.trim(); localStorage.setItem("ttsEndpoint",this.ttsEndpoint); },
   addRecord(id,ans,ok){ this.history.unshift({id:crypto.randomUUID(),problemID:id,timestamp:Date.now(),userAnswer:ans,correct:ok}); this.saveHistory(); },
   importCSVText(text){
     const rows=CSV.parse(text), h=rows[0]; const ji=h.indexOf("jp"), ei=h.indexOf("en"); if(ji<0||ei<0) throw new Error("CSVヘッダーに jp,en が必要です");
@@ -76,8 +70,8 @@ const Store={
     this.saveProblems(); return added;
   },
   exportJSON(){
-    const bundle={exportedAt:new Date().toISOString(),problems:this.problems,history:this.history,delayJPEN:this.delayJPEN,delayNextJP:this.delayNextJP};
-    const blob=new Blob([JSON.stringify(bundle,null,2)],{type:"application/json"}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=`waei_v2_fixbold_export_${Date.now()}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
+    const bundle={exportedAt:new Date().toISOString(),problems:this.problems,history:this.history,delayJPEN:this.delayJPEN,delayNextJP:this.delayNextJP,ttsMode:this.ttsMode,ttsEndpoint:this.ttsEndpoint};
+    const blob=new Blob([JSON.stringify(bundle,null,2)],{type:"application/json"}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=`waei_v3_export_${Date.now()}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
   }
 };
 
@@ -97,7 +91,7 @@ const CSV={
   }
 };
 
-// ===== Voice Picker (Native-first) =====
+// ===== Voice Picker (WebSpeech fallback) =====
 const VoicePicker = (()=>{
   let voicesCache=[]; let readyResolve; const ready=new Promise(res=>readyResolve=res);
   function loadVoices(){ const v=speechSynthesis.getVoices(); if(v&&v.length){ voicesCache=v; readyResolve(); } }
@@ -116,10 +110,9 @@ const VoicePicker = (()=>{
   return { pick, ready };
 })();
 
-// ===== TTS =====
-const TTS={
-  autoplay:false,_abort:false,
-  cancel(){ speechSynthesis.cancel(); this._abort=true; },
+// ===== WebSpeech TTS (foreground) =====
+const WebSpeechTTS={
+  cancel(){ speechSynthesis.cancel(); },
   async speak(text,lang){
     await VoicePicker.ready;
     return new Promise(async res=>{
@@ -130,18 +123,102 @@ const TTS={
       u.onend=()=>res(); u.onerror=()=>res();
       speechSynthesis.speak(u);
     });
+  }
+};
+
+// ===== Background Audio TTS (server-generated) =====
+const AudioTTS={
+  audio: null, queue: [], playing:false, abort:false,
+  ensureAudio(){
+    if(!this.audio){
+      this.audio=document.getElementById("ttsAudio");
+      this.audio.addEventListener("ended",()=>this._next());
+      this.audio.addEventListener("pause",()=>{});
+    }
+  },
+  async fetchURL(lang,text){
+    const endpoint=(Store.ttsEndpoint||"").trim();
+    if(!endpoint) throw new Error("TTSエンドポイントが未設定です（設定タブで保存してください）");
+    const url = endpoint.replace("{lang}", encodeURIComponent(lang)).replace("{text}", encodeURIComponent(text));
+    return url;
+  },
+  async enqueueParts(parts){
+    // parts: [{lang,text,metaTitle}]
+    for(const p of parts){
+      const src=await this.fetchURL(p.lang,p.text);
+      this.queue.push({src, metaTitle:p.metaTitle || p.text});
+    }
+    if(!this.playing) this._next();
+  },
+  _setNowPlaying(title){
+    if('mediaSession' in navigator){
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title, artist: "Waei Trainer", album: "Practice",
+        artwork: [{src:"icons/icon-180.png", sizes:"180x180", type:"image/png"}]
+      });
+      navigator.mediaSession.setActionHandler('play', ()=>{ this.audio?.play(); this.playing=true; });
+      navigator.mediaSession.setActionHandler('pause', ()=>{ this.audio?.pause(); this.playing=false; });
+      navigator.mediaSession.setActionHandler('stop', ()=>{ this.stop(); });
+      // next/previous not used
+    }
+  },
+  async _next(){
+    if(this.abort){ this.playing=false; return; }
+    const item=this.queue.shift();
+    if(!item){ this.playing=false; return; }
+    this.ensureAudio();
+    this._setNowPlaying(item.metaTitle);
+    this.audio.src=item.src;
+    try{
+      await this.audio.play();
+      this.playing=true;
+    }catch(e){
+      console.warn("Audio play error", e);
+      this.playing=false;
+    }
+  },
+  stop(){
+    this.abort=true;
+    try{ this.audio?.pause(); }catch{}
+    this.queue=[]; this.playing=false; setTimeout(()=>this.abort=false,100);
+  }
+};
+
+// ===== Unified TTS facade =====
+const TTS={
+  autoplay:false,_abort:false,
+  cancel(){ WebSpeechTTS.cancel(); AudioTTS.stop(); this._abort=true; },
+  async speak(text,lang){
+    if(Store.ttsMode==="audio"){
+      AudioTTS.ensureAudio();
+      await AudioTTS.enqueueParts([{lang,text,metaTitle:text}]);
+      return;
+    }else{
+      await WebSpeechTTS.speak(text,lang);
+    }
   },
   wait(ms){ return new Promise(r=>setTimeout(r,ms)); },
   async seq(jp,en,delay,after){
     this._abort=false; this.cancel(); this._abort=false;
-    await this.speak(jp,"ja-JP"); if(this._abort) return;
-    await this.wait(delay*1000); if(this._abort) return;
-    await this.speak(en,"en-US"); if(this._abort) return;
-    if(after) after();
+    if(Store.ttsMode==="audio"){
+      AudioTTS.ensureAudio();
+      // enqueue JP then EN with a silent gap using setTimeout logic
+      await AudioTTS.enqueueParts([{lang:"ja-JP",text:jp,metaTitle:jp}]);
+      // schedule EN after delay by pushing a silent gap via timeout
+      setTimeout(async()=>{
+        await AudioTTS.enqueueParts([{lang:"en-US",text:en,metaTitle:en}]);
+        if(after) after();
+      }, delay*1000);
+    }else{
+      await WebSpeechTTS.speak(jp,"ja-JP"); if(this._abort) return;
+      await this.wait(delay*1000); if(this._abort) return;
+      await WebSpeechTTS.speak(en,"en-US"); if(this._abort) return;
+      if(after) after();
+    }
   }
 };
 
-// ===== Practice =====
+// ===== Practice / UI (incl. list mini TTS) =====
 const Practice={
   current:null,pool:[],answer:[],
   pickRandom(){
@@ -175,7 +252,6 @@ const Practice={
     if(!key){ UI.setExplanation("（APIキー未設定のため、解説自動生成はスキップされました）"); UI.showExplaining(false); return; }
     try{
       const prompt=`あなたは英語学習者向けに、語順の理由を日本語で分かりやすく解説する先生です。
-1) 正誤を一言で述べ、2) 語順と品詞の働き、3) 同種の誤り回避のコツを200〜300字で。
 日本文: ${this.current.jp}
 正解の英語: ${this.current.en}
 ユーザーの英語: ${userEN}`;
@@ -195,7 +271,6 @@ const Practice={
   }
 };
 
-// ===== UI =====
 const UI={
   els:{},
   init(){
@@ -229,7 +304,7 @@ const UI={
       const loop=async()=>{
         await TTS.seq(Practice.current.jp, Practice.current.en, Store.delayJPEN, async()=>{
           if(!TTS.autoplay) return;
-          await TTS.wait(Store.delayNextJP*1000);
+          await new Promise(r=>setTimeout(r,Store.delayNextJP*1000));
           if(!TTS.autoplay) return;
           Practice.pickRandom();
           await loop();
@@ -240,9 +315,30 @@ const UI={
     document.getElementById("stopSpeakBtn").onclick=()=>{ TTS.autoplay=false; TTS.cancel(); };
     document.getElementById("autoplayChk").onchange=(e)=>{ TTS.autoplay=e.target.checked; if(!TTS.autoplay) TTS.cancel(); };
 
+    // Problems
     this.els.problemsList=document.getElementById("problemsList");
     const pSearch=document.getElementById("problemSearch");
     pSearch.addEventListener("input", ()=>this.refreshProblems(pSearch.value));
+
+    // History
+    this.els.histList=document.getElementById("historyList");
+    this.els.histFilter=document.getElementById("histFilter");
+    this.els.histSearch=document.getElementById("histSearch");
+    this.els.histFilter.addEventListener("change", ()=>this.refreshHistory());
+    this.els.histSearch.addEventListener("input", ()=>this.refreshHistory());
+
+    // Settings
+    const apiKey=document.getElementById("apiKey");
+    document.getElementById("saveKeyBtn").onclick=()=>{ Store.saveApiKey(apiKey.value.trim()); alert("保存しました"); };
+    document.getElementById("deleteKeyBtn").onclick=()=>{ Store.saveApiKey(""); apiKey.value=""; alert("削除しました"); };
+
+    const saveTtsEndpoint=document.getElementById("saveTtsEndpoint");
+    saveTtsEndpoint.onclick=()=>{
+      const val=document.getElementById("ttsEndpoint").value.trim();
+      Store.setTTSEndpoint(val);
+      alert("TTSエンドポイントを保存しました");
+    };
+
     document.getElementById("csvBtn").onclick=()=>document.getElementById("csvInput").click();
     document.getElementById("csvInput").addEventListener("change", async (e)=>{
       const file=e.target.files?.[0]; if(!file) return;
@@ -252,24 +348,7 @@ const UI={
       e.target.value="";
     });
 
-    this.els.histList=document.getElementById("historyList");
-    const histFilter=document.getElementById("histFilter");
-    const histSearch=document.getElementById("histSearch");
-    histFilter.addEventListener("change", ()=>this.refreshHistory());
-    histSearch.addEventListener("input", ()=>this.refreshHistory());
-    this.els.histFilter=histFilter; this.els.histSearch=histSearch;
-
-    const apiKey=document.getElementById("apiKey");
-    document.getElementById("saveKeyBtn").onclick=()=>{ Store.saveApiKey(apiKey.value.trim()); alert("保存しました"); };
-    document.getElementById("deleteKeyBtn").onclick=()=>{ Store.saveApiKey(""); apiKey.value=""; alert("削除しました"); };
-    document.getElementById("exportBtn").onclick=()=>Store.exportJSON();
-    document.getElementById("resetAllBtn").onclick=()=>{
-      if(confirm("問題・履歴・APIキー・読み上げ設定をすべて削除します。よろしいですか？")){
-        localStorage.removeItem("problems"); localStorage.removeItem("history"); localStorage.removeItem("apiKey");
-        localStorage.removeItem("delayJPEN"); localStorage.removeItem("delayNextJP"); location.reload();
-      }
-    };
-
+    // Delay sliders
     const s1=document.getElementById("delayJPEN"), s2=document.getElementById("delayNextJP"),
           v1=document.getElementById("delayJPENVal"), v2=document.getElementById("delayNextJPVal");
     s1.addEventListener("input", ()=>v1.textContent=s1.value+"s");
@@ -278,14 +357,20 @@ const UI={
     s2.addEventListener("change", ()=>Store.setDelayNextJP(s2.value));
     this.els.delayJPEN=s1; this.els.delayNextJP=s2; this.els.delayJPENVal=v1; this.els.delayNextJPVal=v2;
 
+    // TTS mode radios
+    document.querySelectorAll('input[name="ttsMode"]').forEach(r=>{
+      r.addEventListener("change", ()=>{ Store.setTTSMode(r.value); });
+    });
+
+    // Install hint & SW
     const ih=document.getElementById("installHint");
     if (window.matchMedia('(display-mode: standalone)').matches) { ih.classList.add("hidden"); }
     else { ih.classList.remove("hidden"); ih.onclick=()=>alert("Safariの共有ボタン → 『ホーム画面に追加』からインストールできます。"); }
-
     if ("serviceWorker" in navigator){ window.addEventListener("load", ()=> navigator.serviceWorker.register("sw.js")); }
 
     Store.load();
   },
+
   setJP(t){ this.els.jp.textContent=t; },
   renderPool(pool){
     this.els.pool.innerHTML="";
@@ -318,24 +403,33 @@ const UI={
     this.els.explainWrap.classList.remove("hidden");
     this.els.explain.textContent = text || "（解説なし）";
   },
+
   refreshProblems(q=""){
     const key=(q||"").toLowerCase();
     const list=(Store.problems||[]).filter(p=>!key || p.jp.toLowerCase().includes(key) || p.en.toLowerCase().includes(key));
     this.els.problemsList.innerHTML="";
     list.forEach(p=>{
       const d=document.createElement("div"); d.className="item";
-      d.innerHTML = `<div class="meta">ID: ${p.id}</div><div>${p.jp}</div><div class="en">${p.en}</div>`;
+      d.innerHTML = `<div class="meta">ID: ${p.id}</div>
+        <div>${p.jp}</div>
+        <div class="en">${p.en}</div>
+        <div class="tts-mini">
+          <button class="mini-jp">JP▶︎</button>
+          <button class="mini-en">EN▶︎</button>
+          <button class="mini-seq">JP→EN▶︎</button>
+        </div>`;
       d.addEventListener("click", ()=>Practice.setProblemById(p.id));
+      d.querySelector(".mini-jp").addEventListener("click", async (e)=>{ e.stopPropagation(); TTS.cancel(); await TTS.speak(p.jp,"ja-JP"); });
+      d.querySelector(".mini-en").addEventListener("click", async (e)=>{ e.stopPropagation(); TTS.cancel(); await TTS.speak(p.en,"en-US"); });
+      d.querySelector(".mini-seq").addEventListener("click", async (e)=>{ e.stopPropagation(); TTS.cancel(); await TTS.seq(p.jp,p.en,Store.delayJPEN); });
       this.els.problemsList.appendChild(d);
     });
   },
+
   refreshHistory(){
-    const filter=this.els.histFilter.value;
     const key=(this.els.histSearch.value||"").toLowerCase();
     const base=Store.history||[];
     const list=base.filter(rec=>{
-      if (filter==="correct" && !rec.correct) return false;
-      if (filter==="wrong" && rec.correct) return false;
       if (!key) return true;
       const p=Store.problems.find(x=>x.id===rec.problemID);
       return (p?.jp||"").toLowerCase().includes(key) || (p?.en||"").toLowerCase().includes(key) || (rec.userAnswer||"").toLowerCase().includes(key);
@@ -345,18 +439,38 @@ const UI={
       const p=Store.problems.find(x=>x.id===rec.problemID);
       const d=document.createElement("div"); d.className="item";
       const dt=new Date(rec.timestamp);
+      const jp = p?.jp || "(削除済み問題)";
+      const en = p?.en || "";
       d.innerHTML=`<div class="meta">
-        <span>${rec.correct ? "正解" : "不正解"}</span>
         <span>${dt.toLocaleDateString()} ${dt.toLocaleTimeString()}</span>
       </div>
-      <div>${p?.jp||"(削除済み問題)"} </div>
+      <div>${jp}</div>
       <div class="ans">あなたの解答：${rec.userAnswer}</div>
-      <div class="en">正解：${p?.en||""}</div>`;
+      <div class="en">正解：${en}</div>
+      <div class="tts-mini">
+        <button class="mini-jp">JP▶︎</button>
+        <button class="mini-en">EN▶︎</button>
+        <button class="mini-seq">JP→EN▶︎</button>
+      </div>`;
       d.addEventListener("click", ()=>{ if(p?.id) Practice.setProblemById(p.id); });
+      d.querySelector(".mini-jp").addEventListener("click", async (e)=>{ e.stopPropagation(); if(jp) { TTS.cancel(); await TTS.speak(jp,"ja-JP"); } });
+      d.querySelector(".mini-en").addEventListener("click", async (e)=>{ e.stopPropagation(); if(en) { TTS.cancel(); await TTS.speak(en,"en-US"); } });
+      d.querySelector(".mini-seq").addEventListener("click", async (e)=>{ e.stopPropagation(); if(jp && en){ TTS.cancel(); await TTS.seq(jp,en,Store.delayJPEN); } });
       this.els.histList.appendChild(d);
     });
   },
+
   setApiKey(k){ this.els.apiKey.value=k||""; },
+  initDelayControls(d1,d2){
+    document.getElementById("delayJPEN").value=d1;
+    document.getElementById("delayNextJP").value=d2;
+    document.getElementById("delayJPENVal").textContent=d1+"s";
+    document.getElementById("delayNextJPVal").textContent=d2+"s";
+  },
+  initTTSMode(mode, endpoint){
+    document.querySelectorAll('input[name="ttsMode"]').forEach(r=>{ r.checked = (r.value===mode); });
+    document.getElementById("ttsEndpoint").value = endpoint || "";
+  },
   showNoProblems(){
     this.setJP("（問題がありません。問題タブからCSVを追加してください）");
     this.renderPool([]); this.renderAnswer([]);
@@ -366,12 +480,6 @@ const UI={
     document.querySelector(`nav button[data-tab="${id}"]`)?.classList.add("active");
     document.querySelectorAll(".tab").forEach(s=>s.classList.remove("active"));
     document.getElementById(id).classList.add("active");
-  },
-  initDelayControls(d1,d2){
-    document.getElementById("delayJPEN").value=d1;
-    document.getElementById("delayNextJP").value=d2;
-    document.getElementById("delayJPENVal").textContent=d1+"s";
-    document.getElementById("delayNextJPVal").textContent=d2+"s";
   }
 };
 

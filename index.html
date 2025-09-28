@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0f62fe" />
-  <title>和英正順PWA v2 – Native TTS (Fix + Bold)</title>
+  <title>和英正順PWA v3 – Background Audio</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -13,7 +13,7 @@
 </head>
 <body>
 <header>
-  <h1>和英正順アプリ（PWA）v2 – Native TTS</h1>
+  <h1>和英正順アプリ（PWA）v3 – 背景再生</h1>
   <nav>
     <button data-tab="practice" class="active">練習</button>
     <button data-tab="problems">問題</button>
@@ -55,40 +55,57 @@
   </section>
 
   <section id="problems" class="tab">
-    <div class="row">
-      <input id="problemSearch" placeholder="日本文/英文で検索">
-      <span class="hint">右上でCSV追加</span>
-      <input id="csvInput" type="file" accept=".csv,text/csv" hidden>
-      <button id="csvBtn">CSVインポート</button>
+    <div class="card">
+      <div class="row">
+        <input id="problemSearch" placeholder="日本文/英文で検索">
+        <span class="flex"></span>
+        <input id="csvInput" type="file" accept=".csv,text/csv" hidden>
+        <button id="csvBtn">CSVインポート</button>
+      </div>
+      <div id="problemsList" class="list"></div>
     </div>
-    <div id="problemsList" class="list"></div>
   </section>
 
   <section id="history" class="tab">
-    <div class="row">
-      <select id="histFilter">
-        <option value="all">すべて</option>
-        <option value="correct">正解のみ</option>
-        <option value="wrong">不正解のみ</option>
-      </select>
-      <input id="histSearch" placeholder="日本文/英文/解答で検索">
+    <div class="card">
+      <div class="row">
+        <select id="histFilter">
+          <option value="all">すべて</option>
+        </select>
+        <input id="histSearch" placeholder="日本文/英文/解答で検索">
+      </div>
+      <div id="historyList" class="list"></div>
     </div>
-    <div id="historyList" class="list"></div>
   </section>
 
   <section id="settings" class="tab">
     <div class="card">
-      <h3>OpenAI API キー</h3>
+      <h3>OpenAI API キー（解説生成用）</h3>
       <div class="row">
         <input id="apiKey" placeholder="sk-..." />
         <button id="saveKeyBtn" class="primary">保存</button>
         <button id="deleteKeyBtn" class="danger">削除</button>
       </div>
-      <p class="note">解説生成に使用します。Cloudflare Workers などのプロキシ利用も可能です。</p>
+      <p class="note">解説はOpenAI APIを使用します。</p>
     </div>
 
     <div class="card">
-      <h3>読み上げ（TTS）設定</h3>
+      <h3>読み上げ（TTS）モード</h3>
+      <div class="row">
+        <label><input type="radio" name="ttsMode" value="webspeech"> Web Speech（端末内・簡易）</label>
+      </div>
+      <div class="row">
+        <label><input type="radio" name="ttsMode" value="audio"> 背景再生オーディオ（推奨）</label>
+      </div>
+      <p class="note">背景再生オーディオはサーバーで音声ファイルを生成し、<code>&lt;audio&gt;</code>で再生します。別アプリ表示や画面オフ時も再生が継続し、ロック画面の操作にも対応します（対応ブラウザ）。</p>
+      <div class="row">
+        <input id="ttsEndpoint" placeholder="https://your-worker.example.com/tts?lang={lang}&text={text}" />
+        <button id="saveTtsEndpoint" class="primary">TTSエンドポイント保存</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>読み上げタイミング</h3>
       <div class="row">
         <label class="slider">
           JP → EN 開始まで（秒）
@@ -104,19 +121,14 @@
         </label>
       </div>
     </div>
-
-    <div class="card">
-      <h3>データ エクスポート/初期化</h3>
-      <div class="row">
-        <button id="exportBtn">JSONを書き出し</button>
-        <button id="resetAllBtn" class="danger">すべて初期化</button>
-      </div>
-    </div>
   </section>
 </main>
 
+<!-- Hidden audio element for background playback -->
+<audio id="ttsAudio" preload="auto"></audio>
+
 <footer>
-  <span>和英正順PWA v2 – Native TTS</span>
+  <span>和英正順PWA v3 – 背景再生</span>
   <span class="flex"></span>
   <a id="installHint" href="#" class="install-hint hidden">ホーム画面に追加</a>
 </footer>
