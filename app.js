@@ -71,7 +71,7 @@ const Store={
   },
   exportJSON(){
     const bundle={exportedAt:new Date().toISOString(),problems:this.problems,history:this.history,delayJPEN:this.delayJPEN,delayNextJP:this.delayNextJP,ttsMode:this.ttsMode,ttsEndpoint:this.ttsEndpoint};
-    const blob=new Blob([JSON.stringify(bundle,null,2)],{type:"application/json"}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=`waei_v3_export_${Date.now()}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
+    const blob=new Blob([JSON.stringify(bundle,null,2)],{type:"application/json"}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=`waei_v3_1_export_${Date.now()}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
   }
 };
 
@@ -128,12 +128,10 @@ const WebSpeechTTS={
 
 // ===== Background Audio TTS (server-generated) =====
 const AudioTTS={
-  audio: null, queue: [], playing:false, abort:false,
+  audio: null, playing:false,
   ensureAudio(){
     if(!this.audio){
       this.audio=document.getElementById("ttsAudio");
-      this.audio.addEventListener("ended",()=>this._next());
-      this.audio.addEventListener("pause",()=>{});
     }
   },
   async fetchURL(lang,text){
@@ -142,83 +140,54 @@ const AudioTTS={
     const url = endpoint.replace("{lang}", encodeURIComponent(lang)).replace("{text}", encodeURIComponent(text));
     return url;
   },
-  async enqueueParts(parts){
-    // parts: [{lang,text,metaTitle}]
-    for(const p of parts){
-      const src=await this.fetchURL(p.lang,p.text);
-      this.queue.push({src, metaTitle:p.metaTitle || p.text});
-    }
-    if(!this.playing) this._next();
-  },
-  _setNowPlaying(title){
+  async playOnce(lang,text,metaTitle){
+    this.ensureAudio();
+    const src=await this.fetchURL(lang,text);
     if('mediaSession' in navigator){
       navigator.mediaSession.metadata = new MediaMetadata({
-        title, artist: "Waei Trainer", album: "Practice",
+        title: metaTitle || text, artist: "Waei Trainer", album: "Practice",
         artwork: [{src:"icons/icon-180.png", sizes:"180x180", type:"image/png"}]
       });
       navigator.mediaSession.setActionHandler('play', ()=>{ this.audio?.play(); this.playing=true; });
       navigator.mediaSession.setActionHandler('pause', ()=>{ this.audio?.pause(); this.playing=false; });
       navigator.mediaSession.setActionHandler('stop', ()=>{ this.stop(); });
-      // next/previous not used
     }
-  },
-  async _next(){
-    if(this.abort){ this.playing=false; return; }
-    const item=this.queue.shift();
-    if(!item){ this.playing=false; return; }
-    this.ensureAudio();
-    this._setNowPlaying(item.metaTitle);
-    this.audio.src=item.src;
-    try{
-      await this.audio.play();
-      this.playing=true;
-    }catch(e){
-      console.warn("Audio play error", e);
-      this.playing=false;
-    }
+    return new Promise(async resolve=>{
+      const onend=()=>{ this.audio.removeEventListener("ended", onend); resolve(); };
+      this.audio.addEventListener("ended", onend);
+      this.audio.src=src;
+      try{ await this.audio.play(); this.playing=true; }catch(e){ resolve(); }
+    });
   },
   stop(){
-    this.abort=true;
     try{ this.audio?.pause(); }catch{}
-    this.queue=[]; this.playing=false; setTimeout(()=>this.abort=false,100);
+    if(this.audio){ this.audio.src=""; }
+    this.playing=false;
   }
 };
 
 // ===== Unified TTS facade =====
 const TTS={
-  autoplay:false,_abort:false,
-  cancel(){ WebSpeechTTS.cancel(); AudioTTS.stop(); this._abort=true; },
-  async speak(text,lang){
-    if(Store.ttsMode==="audio"){
-      AudioTTS.ensureAudio();
-      await AudioTTS.enqueueParts([{lang,text,metaTitle:text}]);
-      return;
-    }else{
-      await WebSpeechTTS.speak(text,lang);
-    }
-  },
+  cancel(){ WebSpeechTTS.cancel(); AudioTTS.stop(); },
   wait(ms){ return new Promise(r=>setTimeout(r,ms)); },
-  async seq(jp,en,delay,after){
-    this._abort=false; this.cancel(); this._abort=false;
+  async speak(text,lang){
+    if(Store.ttsMode==="audio"){ await AudioTTS.playOnce(lang,text,text); }
+    else { await WebSpeechTTS.speak(text,lang); }
+  },
+  async seqAwait(jp,en,delay){
     if(Store.ttsMode==="audio"){
-      AudioTTS.ensureAudio();
-      // enqueue JP then EN with a silent gap using setTimeout logic
-      await AudioTTS.enqueueParts([{lang:"ja-JP",text:jp,metaTitle:jp}]);
-      // schedule EN after delay by pushing a silent gap via timeout
-      setTimeout(async()=>{
-        await AudioTTS.enqueueParts([{lang:"en-US",text:en,metaTitle:en}]);
-        if(after) after();
-      }, delay*1000);
+      await AudioTTS.playOnce("ja-JP", jp, jp);
+      await this.wait(delay*1000);
+      await AudioTTS.playOnce("en-US", en, en);
     }else{
-      await WebSpeechTTS.speak(jp,"ja-JP"); if(this._abort) return;
-      await this.wait(delay*1000); if(this._abort) return;
-      await WebSpeechTTS.speak(en,"en-US"); if(this._abort) return;
-      if(after) after();
+      await WebSpeechTTS.speak(jp,"ja-JP");
+      await this.wait(delay*1000);
+      await WebSpeechTTS.speak(en,"en-US");
     }
   }
 };
 
-// ===== Practice / UI (incl. list mini TTS) =====
+// ===== Practice =====
 const Practice={
   current:null,pool:[],answer:[],
   pickRandom(){
@@ -271,8 +240,28 @@ const Practice={
   }
 };
 
+// ===== List Autoplay Controller =====
+const ListAuto={
+  running:false, abort:false,
+  stop(){ this.abort=true; this.running=false; TTS.cancel(); },
+  async playItemsJPEN(items){
+    this.abort=false; this.running=true;
+    for (const it of items){
+      if(this.abort) break;
+      const jp = it.jp; const en = it.en;
+      if(!jp || !en) continue;
+      await TTS.seqAwait(jp,en,Store.delayJPEN);
+      if(this.abort) break;
+      await TTS.wait(Store.delayNextJP*1000);
+    }
+    this.running=false;
+  }
+};
+
+// ===== UI =====
 const UI={
   els:{},
+  lastProblems:[], lastHistory:[],
   init(){
     document.querySelectorAll("nav button").forEach(btn=>{
       btn.addEventListener("click",()=>{
@@ -297,35 +286,44 @@ const UI={
     document.getElementById("checkBtn").onclick=()=>Practice.check();
     document.getElementById("nextBtn").onclick=()=>Practice.pickRandom();
 
-    document.getElementById("speakJPBtn").onclick=async()=>{ TTS.cancel(); await TTS.speak(Practice.current.jp,"ja-JP"); };
-    document.getElementById("speakENBtn").onclick=async()=>{ TTS.cancel(); await TTS.speak(Practice.current.en,"en-US"); };
+    document.getElementById("speakJPBtn").onclick=async()=>{ ListAuto.stop(); await TTS.speak(Practice.current.jp,"ja-JP"); };
+    document.getElementById("speakENBtn").onclick=async()=>{ ListAuto.stop(); await TTS.speak(Practice.current.en,"en-US"); };
     document.getElementById("speakSeqBtn").onclick=async()=>{
-      TTS.autoplay=document.getElementById("autoplayChk").checked;
-      const loop=async()=>{
-        await TTS.seq(Practice.current.jp, Practice.current.en, Store.delayJPEN, async()=>{
-          if(!TTS.autoplay) return;
-          await new Promise(r=>setTimeout(r,Store.delayNextJP*1000));
-          if(!TTS.autoplay) return;
-          Practice.pickRandom();
-          await loop();
-        });
-      };
-      loop();
+      ListAuto.stop();
+      await TTS.seqAwait(Practice.current.jp, Practice.current.en, Store.delayJPEN);
     };
-    document.getElementById("stopSpeakBtn").onclick=()=>{ TTS.autoplay=false; TTS.cancel(); };
-    document.getElementById("autoplayChk").onchange=(e)=>{ TTS.autoplay=e.target.checked; if(!TTS.autoplay) TTS.cancel(); };
+    document.getElementById("stopSpeakBtn").onclick=()=>{ ListAuto.stop(); };
 
     // Problems
     this.els.problemsList=document.getElementById("problemsList");
     const pSearch=document.getElementById("problemSearch");
     pSearch.addEventListener("input", ()=>this.refreshProblems(pSearch.value));
+    document.getElementById("problemsPlayAllBtn").onclick=()=>{
+      if(!this.lastProblems.length){ alert("一覧が空です"); return; }
+      ListAuto.playItemsJPEN(this.lastProblems);
+    };
+    document.getElementById("problemsStopBtn").onclick=()=>ListAuto.stop();
+
+    document.getElementById("csvBtn").onclick=()=>document.getElementById("csvInput").click();
+    document.getElementById("csvInput").addEventListener("change", async (e)=>{
+      const file=e.target.files?.[0]; if(!file) return;
+      const text=await file.text();
+      try{ const added=Store.importCSVText(text); alert(`インポート成功：${added}件追加`); this.refreshProblems(pSearch.value); }
+      catch(err){ alert("インポート失敗: " + err.message); }
+      e.target.value="";
+    });
 
     // History
     this.els.histList=document.getElementById("historyList");
-    this.els.histFilter=document.getElementById("histFilter");
-    this.els.histSearch=document.getElementById("histSearch");
-    this.els.histFilter.addEventListener("change", ()=>this.refreshHistory());
-    this.els.histSearch.addEventListener("input", ()=>this.refreshHistory());
+    const histFilter=document.getElementById("histFilter");
+    const histSearch=document.getElementById("histSearch");
+    histFilter.addEventListener("change", ()=>this.refreshHistory());
+    histSearch.addEventListener("input", ()=>this.refreshHistory());
+    document.getElementById("historyPlayAllBtn").onclick=()=>{
+      if(!this.lastHistory.length){ alert("一覧が空です"); return; }
+      ListAuto.playItemsJPEN(this.lastHistory);
+    };
+    document.getElementById("historyStopBtn").onclick=()=>ListAuto.stop();
 
     // Settings
     const apiKey=document.getElementById("apiKey");
@@ -338,15 +336,6 @@ const UI={
       Store.setTTSEndpoint(val);
       alert("TTSエンドポイントを保存しました");
     };
-
-    document.getElementById("csvBtn").onclick=()=>document.getElementById("csvInput").click();
-    document.getElementById("csvInput").addEventListener("change", async (e)=>{
-      const file=e.target.files?.[0]; if(!file) return;
-      const text=await file.text();
-      try{ const added=Store.importCSVText(text); alert(`インポート成功：${added}件追加`); this.refreshProblems(pSearch.value); }
-      catch(err){ alert("インポート失敗: " + err.message); }
-      e.target.value="";
-    });
 
     // Delay sliders
     const s1=document.getElementById("delayJPEN"), s2=document.getElementById("delayNextJP"),
@@ -407,6 +396,7 @@ const UI={
   refreshProblems(q=""){
     const key=(q||"").toLowerCase();
     const list=(Store.problems||[]).filter(p=>!key || p.jp.toLowerCase().includes(key) || p.en.toLowerCase().includes(key));
+    this.lastProblems=list.map(p=>({jp:p.jp,en:p.en,id:p.id}));
     this.els.problemsList.innerHTML="";
     list.forEach(p=>{
       const d=document.createElement("div"); d.className="item";
@@ -419,29 +409,39 @@ const UI={
           <button class="mini-seq">JP→EN▶︎</button>
         </div>`;
       d.addEventListener("click", ()=>Practice.setProblemById(p.id));
-      d.querySelector(".mini-jp").addEventListener("click", async (e)=>{ e.stopPropagation(); TTS.cancel(); await TTS.speak(p.jp,"ja-JP"); });
-      d.querySelector(".mini-en").addEventListener("click", async (e)=>{ e.stopPropagation(); TTS.cancel(); await TTS.speak(p.en,"en-US"); });
-      d.querySelector(".mini-seq").addEventListener("click", async (e)=>{ e.stopPropagation(); TTS.cancel(); await TTS.seq(p.jp,p.en,Store.delayJPEN); });
+      d.querySelector(".mini-jp").addEventListener("click", async (e)=>{ e.stopPropagation(); ListAuto.stop(); await TTS.speak(p.jp,"ja-JP"); });
+      d.querySelector(".mini-en").addEventListener("click", async (e)=>{ e.stopPropagation(); ListAuto.stop(); await TTS.speak(p.en,"en-US"); });
+      d.querySelector(".mini-seq").addEventListener("click", async (e)=>{ e.stopPropagation(); ListAuto.stop(); await TTS.seqAwait(p.jp,p.en,Store.delayJPEN); });
       this.els.problemsList.appendChild(d);
     });
   },
 
   refreshHistory(){
-    const key=(this.els.histSearch.value||"").toLowerCase();
+    const filter = document.getElementById("histFilter").value;
+    const key=(document.getElementById("histSearch").value||"").toLowerCase();
     const base=Store.history||[];
-    const list=base.filter(rec=>{
-      if (!key) return true;
+    const filtered=base.filter(rec=>{
+      if (filter==="correct" && !rec.correct) return false;
+      if (filter==="wrong" && rec.correct) return false;
+      return true;
+    });
+    const list = filtered.filter(rec=>{
+      if(!key) return true;
       const p=Store.problems.find(x=>x.id===rec.problemID);
       return (p?.jp||"").toLowerCase().includes(key) || (p?.en||"").toLowerCase().includes(key) || (rec.userAnswer||"").toLowerCase().includes(key);
     });
+
     this.els.histList.innerHTML="";
+    this.lastHistory=[];
     list.forEach(rec=>{
       const p=Store.problems.find(x=>x.id===rec.problemID);
       const d=document.createElement("div"); d.className="item";
       const dt=new Date(rec.timestamp);
       const jp = p?.jp || "(削除済み問題)";
       const en = p?.en || "";
+      if(p?.jp && p?.en) this.lastHistory.push({jp:p.jp,en:p.en,id:p.id});
       d.innerHTML=`<div class="meta">
+        <span>${rec.correct ? "正解" : "不正解"}</span>
         <span>${dt.toLocaleDateString()} ${dt.toLocaleTimeString()}</span>
       </div>
       <div>${jp}</div>
@@ -453,9 +453,9 @@ const UI={
         <button class="mini-seq">JP→EN▶︎</button>
       </div>`;
       d.addEventListener("click", ()=>{ if(p?.id) Practice.setProblemById(p.id); });
-      d.querySelector(".mini-jp").addEventListener("click", async (e)=>{ e.stopPropagation(); if(jp) { TTS.cancel(); await TTS.speak(jp,"ja-JP"); } });
-      d.querySelector(".mini-en").addEventListener("click", async (e)=>{ e.stopPropagation(); if(en) { TTS.cancel(); await TTS.speak(en,"en-US"); } });
-      d.querySelector(".mini-seq").addEventListener("click", async (e)=>{ e.stopPropagation(); if(jp && en){ TTS.cancel(); await TTS.seq(jp,en,Store.delayJPEN); } });
+      d.querySelector(".mini-jp").addEventListener("click", async (e)=>{ e.stopPropagation(); ListAuto.stop(); if(jp) await TTS.speak(jp,"ja-JP"); });
+      d.querySelector(".mini-en").addEventListener("click", async (e)=>{ e.stopPropagation(); ListAuto.stop(); if(en) await TTS.speak(en,"en-US"); });
+      d.querySelector(".mini-seq").addEventListener("click", async (e)=>{ e.stopPropagation(); ListAuto.stop(); if(jp && en) await TTS.seqAwait(jp,en,Store.delayJPEN); });
       this.els.histList.appendChild(d);
     });
   },

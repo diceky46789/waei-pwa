@@ -1,6 +1,6 @@
 {
-  "name": "和英正順アプリ（PWA）v3 – 背景再生",
-  "short_name": "和英正順 v3",
+  "name": "和英正順アプリ（PWA）v3.1 – 背景再生 + 一覧自動再生",
+  "short_name": "和英正順 v3.1",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#ffffff",

@@ -1,5 +1,5 @@
 
-const CACHE="waei-cache-v3-bg-audio";
+const CACHE="waei-cache-v3-1-list-autoplay-rebuild";
 const ASSETS=["./","./index.html","./styles.css","./app.js","./manifest.webmanifest","./resources/builtin_problems.csv","./icons/icon-192.png","./icons/icon-512.png","./icons/icon-180.png"];
 self.addEventListener("install",e=>{ e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS))); self.skipWaiting(); });
 self.addEventListener("activate",e=>{ e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k))))); self.clients.claim(); });

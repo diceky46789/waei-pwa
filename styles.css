@@ -18,8 +18,8 @@ main{ padding:16px; max-width:980px; margin:0 auto; }
 .pool{ display:flex; flex-wrap:wrap; gap:10px; min-height:56px; padding:10px; background:#fcfcff; border:1px dashed #d5d9ff; border-radius:8px; }
 .token{ padding:10px 12px; background:#eef2ff; border:1px solid #d7defe; border-radius:999px; cursor:pointer; user-select:none; font-size:18px; font-weight:750; letter-spacing:0.2px; }
 
-.row{ display:flex; align-items:center; gap:8px; margin:8px 0; }
-.flex{ flex:1; }
+.row{ display:flex; align-items:center; gap:8px; margin:8px 0; flex-wrap:wrap; }
+.flex{ flex:1; min-width:8px; }
 button{ padding:8px 12px; border:1px solid #ddd; background:#fff; border-radius:10px; cursor:pointer; font-weight:600; }
 button.primary{ background:var(--pri); color:#fff; border-color:var(--pri); }
 button.warn{ background:var(--warn); color:#fff; border-color:var(--warn); }

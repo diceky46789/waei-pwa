@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0f62fe" />
-  <title>和英正順PWA v3 – Background Audio</title>
+  <title>和英正順PWA v3.1 – 背景再生 + 一覧自動再生</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -13,7 +13,7 @@
 </head>
 <body>
 <header>
-  <h1>和英正順アプリ（PWA）v3 – 背景再生</h1>
+  <h1>和英正順アプリ（PWA）v3.1 – 背景再生</h1>
   <nav>
     <button data-tab="practice" class="active">練習</button>
     <button data-tab="problems">問題</button>
@@ -59,6 +59,10 @@
       <div class="row">
         <input id="problemSearch" placeholder="日本文/英文で検索">
         <span class="flex"></span>
+        <div class="row">
+          <button id="problemsPlayAllBtn" class="primary">一覧JP→EN自動再生</button>
+          <button id="problemsStopBtn" class="danger">停止</button>
+        </div>
         <input id="csvInput" type="file" accept=".csv,text/csv" hidden>
         <button id="csvBtn">CSVインポート</button>
       </div>
@@ -71,8 +75,15 @@
       <div class="row">
         <select id="histFilter">
           <option value="all">すべて</option>
+          <option value="correct">正解のみ</option>
+          <option value="wrong">不正解のみ</option>
         </select>
         <input id="histSearch" placeholder="日本文/英文/解答で検索">
+        <span class="flex"></span>
+        <div class="row">
+          <button id="historyPlayAllBtn" class="primary">一覧JP→EN自動再生</button>
+          <button id="historyStopBtn" class="danger">停止</button>
+        </div>
       </div>
       <div id="historyList" class="list"></div>
     </div>
@@ -97,7 +108,7 @@
       <div class="row">
         <label><input type="radio" name="ttsMode" value="audio"> 背景再生オーディオ（推奨）</label>
       </div>
-      <p class="note">背景再生オーディオはサーバーで音声ファイルを生成し、<code>&lt;audio&gt;</code>で再生します。別アプリ表示や画面オフ時も再生が継続し、ロック画面の操作にも対応します（対応ブラウザ）。</p>
+      <p class="note">背景再生オーディオはサーバーで音声ファイルを生成し、<code>&lt;audio&gt;</code>で再生します。</p>
       <div class="row">
         <input id="ttsEndpoint" placeholder="https://your-worker.example.com/tts?lang={lang}&text={text}" />
         <button id="saveTtsEndpoint" class="primary">TTSエンドポイント保存</button>
@@ -124,11 +135,10 @@
   </section>
 </main>
 
-<!-- Hidden audio element for background playback -->
 <audio id="ttsAudio" preload="auto"></audio>
 
 <footer>
-  <span>和英正順PWA v3 – 背景再生</span>
+  <span>和英正順PWA v3.1 – 背景再生</span>
   <span class="flex"></span>
   <a id="installHint" href="#" class="install-hint hidden">ホーム画面に追加</a>
 </footer>
