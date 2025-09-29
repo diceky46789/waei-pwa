@@ -37,7 +37,7 @@ const Store={
     this.apiKey=localStorage.getItem("apiKey")||"";
     this.delayJPEN=clamp(parseFloat(localStorage.getItem("delayJPEN")||"1.0"),0.5,10);
     this.delayNextJP=clamp(parseFloat(localStorage.getItem("delayNextJP")||"2.0"),0.5,10);
-    this.ttsMode=localStorage.getItem("ttsMode")||"audio"; // default to audio
+    this.ttsMode=localStorage.getItem("ttsMode")||"audio";
     this.ttsEndpoint=localStorage.getItem("ttsEndpoint")||"";
     this.repeatCount=clamp(parseInt(localStorage.getItem("repeatCount")||"1"),1,10);
     this.baseVolume=clamp(parseFloat(localStorage.getItem("baseVolume")||"1.0"),0,1);
@@ -78,7 +78,7 @@ const Store={
   },
   exportJSON(){
     const bundle={exportedAt:new Date().toISOString(),problems:this.problems,history:this.history,delayJPEN:this.delayJPEN,delayNextJP:this.delayNextJP,ttsMode:this.ttsMode,ttsEndpoint:this.ttsEndpoint,repeatCount:this.repeatCount,baseVolume:this.baseVolume,boostDb:this.boostDb};
-    const blob=new Blob([JSON.stringify(bundle,null,2)],{type:"application/json"}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=`waei_v3_2_export_${Date.now()}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
+    const blob=new Blob([JSON.stringify(bundle,null,2)],{type:"application/json"}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=`waei_v3_3_export_${Date.now()}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
   }
 };
 
@@ -126,7 +126,7 @@ const WebSpeechTTS={
       const u=new SpeechSynthesisUtterance(text);
       const voice=await VoicePicker.pick(lang);
       if(voice) u.voice=voice; else u.lang=lang;
-      u.rate=1; u.pitch=1; u.volume=Store.baseVolume; // 0..1
+      u.rate=1; u.pitch=1; u.volume=Store.baseVolume;
       u.onend=()=>res(); u.onerror=()=>res();
       speechSynthesis.speak(u);
     });
@@ -139,7 +139,7 @@ const AudioTTS={
   ensureAudio(){
     if(!this.audio){
       this.audio=document.getElementById("ttsAudio");
-      this.audio.volume = Store.baseVolume; // 0..1
+      this.audio.volume = Store.baseVolume;
     }
     if(!this.ctx){
       const AC = window.AudioContext || window.webkitAudioContext;
@@ -152,11 +152,11 @@ const AudioTTS={
   },
   applyBoost(db){
     if(!this.gainNode) return;
-    const gain = Math.pow(10, (db||0) / 20); // 0 dB -> x1, 6 dB -> x2
+    const gain = Math.pow(10, (db||0) / 20);
     this.gainNode.gain.value = gain;
   },
   setBaseVolume(v){
-    if(this.audio) this.audio.volume = v; // 0..1
+    if(this.audio) this.audio.volume = v;
   },
   async fetchURL(lang,text){
     const endpoint=(Store.ttsEndpoint||"").trim();
@@ -220,74 +220,22 @@ const TTS={
   }
 };
 
-// ===== Practice =====
-const Practice={
-  current:null,pool:[],answer:[],
-  pickRandom(){
-    if(!Store.problems||!Store.problems.length){ UI.showNoProblems(); return; }
-    this.current=Store.problems[Math.floor(Math.random()*Store.problems.length)];
-    UI.setJP(this.current.jp); this.resetTokens(); UI.clearResult();
-  },
-  setProblemById(id){
-    const p=Store.problems.find(x=>x.id===id); if(!p) return;
-    this.current=p; UI.setJP(p.jp); this.resetTokens(); UI.clearResult(); UI.switchTab("practice");
-  },
-  resetTokens(){
-    this.pool=TOKENS.tokenize(this.current.en).sort(()=>Math.random()-0.5);
-    this.answer=[]; UI.renderPool(this.pool); UI.renderAnswer(this.answer);
-  },
-  undo(){ if(this.answer.length){ const t=this.answer.pop(); this.pool.push(t); UI.renderPool(this.pool); UI.renderAnswer(this.answer); } },
-  shuffle(){ this.pool=this.pool.sort(()=>Math.random()-0.5); UI.renderPool(this.pool); },
-  tapPool(i){ const [t]=this.pool.splice(i,1); this.answer.push(t); UI.renderPool(this.pool); UI.renderAnswer(this.answer); },
-  tapAnswer(i){ const [t]=this.answer.splice(i,1); this.pool.push(t); UI.renderPool(this.pool); UI.renderAnswer(this.answer); },
-  check(){
-    const ans=TOKENS.detokenize(this.answer);
-    const ok=TOKENS.normalized(ans)===TOKENS.normalized(this.current.en);
-    Store.addRecord(this.current.id, ans, ok);
-    UI.showResult(ok, this.current.en);
-    UI.refreshHistory();
-    this.explain(ans, ok);
-  },
-  async explain(userEN, ok){
-    UI.showExplaining(true);
-    const key=Store.apiKey;
-    if(!key){ UI.setExplanation("（APIキー未設定のため、解説自動生成はスキップされました）"); UI.showExplaining(false); return; }
-    try{
-      const prompt=`あなたは英語学習者向けに、語順の理由を日本語で分かりやすく解説する先生です。
-日本文: ${this.current.jp}
-正解の英語: ${this.current.en}
-ユーザーの英語: ${userEN}`;
-      const resp = await fetch("https://api.openai.com/v1/responses", {
-        method:"POST",
-        headers:{ "Authorization":`Bearer ${key}`, "Content-Type":"application/json" },
-        body: JSON.stringify({ model:"gpt-4.1-mini", input:[{role:"user",content:prompt}], temperature:0.2 })
-      });
-      if(!resp.ok) throw new Error(await resp.text());
-      const data = await resp.json();
-      let text="";
-      if (data?.output?.content) text = data.output.content.map(c=>c.text||"").join("\n").trim();
-      else if (data?.choices?.[0]?.message?.content) text = data.choices[0].message.content;
-      UI.setExplanation(text || "（解説の取得に失敗しました）");
-    }catch(e){ UI.setExplanation("解説の取得に失敗しました: " + e.message); }
-    finally{ UI.showExplaining(false); }
-  }
-};
-
-// ===== List Autoplay Controller =====
+// ===== List Autoplay Controller (with auto-scroll) =====
 const ListAuto={
-  running:false, abort:false,
-  stop(){ this.abort=true; this.running=false; TTS.cancel(); },
-  async playItemsJPEN(items){
-    this.abort=false; this.running=true;
+  running:false, abort:false, ctx:null,
+  stop(){ this.abort=true; this.running=false; TTS.cancel(); UI.clearPlaying(); },
+  async playItemsJPEN(items, container){
+    this.abort=false; this.running=true; this.ctx={container};
     for (const it of items){
       if(this.abort) break;
+      UI.setPlaying(container, it.id);
       const jp = it.jp; const en = it.en;
       if(!jp || !en) continue;
       await TTS.seqRepeat(jp,en,Store.repeatCount);
       if(this.abort) break;
       await TTS.wait(Store.delayNextJP*1000);
     }
-    this.running=false;
+    this.running=false; UI.clearPlaying();
   }
 };
 
@@ -295,6 +243,7 @@ const ListAuto={
 const UI={
   els:{},
   lastProblems:[], lastHistory:[],
+  _playingEl:null,
   init(){
     document.querySelectorAll("nav button").forEach(btn=>{
       btn.addEventListener("click",()=>{
@@ -333,7 +282,7 @@ const UI={
     pSearch.addEventListener("input", ()=>this.refreshProblems(pSearch.value));
     document.getElementById("problemsPlayAllBtn").onclick=()=>{
       if(!this.lastProblems.length){ alert("一覧が空です"); return; }
-      ListAuto.playItemsJPEN(this.lastProblems);
+      ListAuto.playItemsJPEN(this.lastProblems, this.els.problemsList);
     };
     document.getElementById("problemsStopBtn").onclick=()=>ListAuto.stop();
 
@@ -354,7 +303,7 @@ const UI={
     histSearch.addEventListener("input", ()=>this.refreshHistory());
     document.getElementById("historyPlayAllBtn").onclick=()=>{
       if(!this.lastHistory.length){ alert("一覧が空です"); return; }
-      ListAuto.playItemsJPEN(this.lastHistory);
+      ListAuto.playItemsJPEN(this.lastHistory, this.els.histList);
     };
     document.getElementById("historyStopBtn").onclick=()=>ListAuto.stop();
 
@@ -444,7 +393,7 @@ const UI={
     this.lastProblems=list.map(p=>({jp:p.jp,en:p.en,id:p.id}));
     this.els.problemsList.innerHTML="";
     list.forEach(p=>{
-      const d=document.createElement("div"); d.className="item";
+      const d=document.createElement("div"); d.className="item"; d.dataset.id=p.id;
       d.innerHTML = `<div class="meta">ID: ${p.id}</div>
         <div>${p.jp}</div>
         <div class="en">${p.en}</div>
@@ -480,7 +429,7 @@ const UI={
     this.lastHistory=[];
     list.forEach(rec=>{
       const p=Store.problems.find(x=>x.id===rec.problemID);
-      const d=document.createElement("div"); d.className="item";
+      const d=document.createElement("div"); d.className="item"; d.dataset.id=p?.id||"";
       const dt=new Date(rec.timestamp);
       const jp = p?.jp || "(削除済み問題)";
       const en = p?.en || "";
@@ -503,6 +452,26 @@ const UI={
       d.querySelector(".mini-seq").addEventListener("click", async (e)=>{ e.stopPropagation(); ListAuto.stop(); if(jp && en) await TTS.seqRepeat(jp,en,Store.repeatCount); });
       this.els.histList.appendChild(d);
     });
+  },
+
+  // Auto-scroll helpers
+  setPlaying(container, id){
+    this.clearPlaying(container);
+    if(!container) return;
+    const el = container.querySelector(`.item[data-id="${CSS.escape(id)}"]`);
+    if(el){
+      el.classList.add("playing");
+      el.scrollIntoView({behavior:"smooth", block:"center"});
+      this._playingEl = el;
+    }
+  },
+  clearPlaying(container){
+    if(container){
+      container.querySelectorAll(".item.playing").forEach(x=>x.classList.remove("playing"));
+    }else{
+      document.querySelectorAll(".item.playing").forEach(x=>x.classList.remove("playing"));
+    }
+    this._playingEl = null;
   },
 
   setApiKey(k){ this.els.apiKey.value=k||""; },

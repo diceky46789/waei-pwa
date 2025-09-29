@@ -1,4 +1,4 @@
-:root{ --bg:#f7f7fb; --card:#fff; --ink:#111; --sub:#666; --pri:#0f62fe; --warn:#ff8c00; --ok:#0aa; --bad:#c62828; }
+:root{ --bg:#f7f7fb; --card:#fff; --ink:#111; --sub:#666; --pri:#0f62fe; --warn:#ff8c00; --ok:#0aa; --bad:#c62828; --playing:#eef3ff; }
 *{ box-sizing:border-box; }
 html,body{ margin:0; padding:0; font-family:-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", "Meiryo", sans-serif; color:var(--ink); background:var(--bg); }
 header{ position:sticky; top:0; background:#fff; border-bottom:1px solid #e5e5ef; z-index:10; }
@@ -33,10 +33,12 @@ button.danger{ background:var(--bad); color:#fff; border-color:var(--bad); }
 .explain.hidden{ display:none; }
 .explanation{ white-space:pre-wrap; line-height:1.6; }
 
-.list .item{ background:var(--card); border:1px solid #ececf5; border-radius:12px; padding:12px; margin-bottom:8px; cursor:pointer; }
+.list .item{ background:var(--card); border:1px solid #ececf5; border-radius:12px; padding:12px; margin-bottom:8px; cursor:pointer; scroll-margin-top:88px; }
 .item .meta{ font-size:12px; color:var(--sub); display:flex; gap:8px; flex-wrap:wrap; }
 .item .en{ font-weight:600; margin-top:4px; }
 .item .ans{ margin-top:4px; }
+
+.item.playing{ background:var(--playing); border-color:#bcd2ff; outline:2px solid #cfe0ff; }
 
 .tts-mini{ display:flex; gap:6px; margin-top:8px; }
 .tts-mini button{ font-size:12px; padding:6px 8px; border-radius:999px; }

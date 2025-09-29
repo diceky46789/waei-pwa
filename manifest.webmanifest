@@ -1,6 +1,6 @@
 {
-  "name": "和英正順アプリ（PWA）v3.2 – リピート & 音量",
-  "short_name": "和英正順 v3.2",
+  "name": "和英正順アプリ（PWA）v3.3 – 自動スクロール",
+  "short_name": "和英正順 v3.3",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#ffffff",
