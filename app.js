@@ -39,6 +39,9 @@ const Store={
     this.delayNextJP=clamp(parseFloat(localStorage.getItem("delayNextJP")||"2.0"),0.5,10);
     this.ttsMode=localStorage.getItem("ttsMode")||"audio"; // default to audio
     this.ttsEndpoint=localStorage.getItem("ttsEndpoint")||"";
+    this.repeatCount=clamp(parseInt(localStorage.getItem("repeatCount")||"1"),1,10);
+    this.baseVolume=clamp(parseFloat(localStorage.getItem("baseVolume")||"1.0"),0,1);
+    this.boostDb=clamp(parseInt(localStorage.getItem("boostDb")||"0"),0,12);
 
     if(!this.problems){
       fetch("resources/builtin_problems.csv").then(r=>r.text()).then(txt=>{
@@ -53,6 +56,7 @@ const Store={
     UI.setApiKey(this.apiKey);
     UI.initDelayControls(this.delayJPEN,this.delayNextJP);
     UI.initTTSMode(this.ttsMode,this.ttsEndpoint);
+    UI.initAudioControls(this.repeatCount,this.baseVolume,this.boostDb);
     UI.refreshHistory();
   },
   saveProblems(){ localStorage.setItem("problems",JSON.stringify(this.problems)); },
@@ -62,6 +66,9 @@ const Store={
   setDelayNextJP(v){ this.delayNextJP=clamp(parseFloat(v)||2.0,0.5,10); localStorage.setItem("delayNextJP",this.delayNextJP); },
   setTTSMode(m){ this.ttsMode=m; localStorage.setItem("ttsMode",m); },
   setTTSEndpoint(url){ this.ttsEndpoint=url.trim(); localStorage.setItem("ttsEndpoint",this.ttsEndpoint); },
+  setRepeatCount(n){ this.repeatCount=clamp(parseInt(n)||1,1,10); localStorage.setItem("repeatCount",this.repeatCount); },
+  setBaseVolume(v){ this.baseVolume=clamp(parseFloat(v)||1,0,1); localStorage.setItem("baseVolume",this.baseVolume); },
+  setBoostDb(db){ this.boostDb=clamp(parseInt(db)||0,0,12); localStorage.setItem("boostDb",this.boostDb); AudioTTS.applyBoost(this.boostDb); },
   addRecord(id,ans,ok){ this.history.unshift({id:crypto.randomUUID(),problemID:id,timestamp:Date.now(),userAnswer:ans,correct:ok}); this.saveHistory(); },
   importCSVText(text){
     const rows=CSV.parse(text), h=rows[0]; const ji=h.indexOf("jp"), ei=h.indexOf("en"); if(ji<0||ei<0) throw new Error("CSVヘッダーに jp,en が必要です");
@@ -70,8 +77,8 @@ const Store={
     this.saveProblems(); return added;
   },
   exportJSON(){
-    const bundle={exportedAt:new Date().toISOString(),problems:this.problems,history:this.history,delayJPEN:this.delayJPEN,delayNextJP:this.delayNextJP,ttsMode:this.ttsMode,ttsEndpoint:this.ttsEndpoint};
-    const blob=new Blob([JSON.stringify(bundle,null,2)],{type:"application/json"}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=`waei_v3_1_export_${Date.now()}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
+    const bundle={exportedAt:new Date().toISOString(),problems:this.problems,history:this.history,delayJPEN:this.delayJPEN,delayNextJP:this.delayNextJP,ttsMode:this.ttsMode,ttsEndpoint:this.ttsEndpoint,repeatCount:this.repeatCount,baseVolume:this.baseVolume,boostDb:this.boostDb};
+    const blob=new Blob([JSON.stringify(bundle,null,2)],{type:"application/json"}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=`waei_v3_2_export_${Date.now()}.json`; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
   }
 };
 
@@ -119,20 +126,37 @@ const WebSpeechTTS={
       const u=new SpeechSynthesisUtterance(text);
       const voice=await VoicePicker.pick(lang);
       if(voice) u.voice=voice; else u.lang=lang;
-      u.rate=1; u.pitch=1; u.volume=1;
+      u.rate=1; u.pitch=1; u.volume=Store.baseVolume; // 0..1
       u.onend=()=>res(); u.onerror=()=>res();
       speechSynthesis.speak(u);
     });
   }
 };
 
-// ===== Background Audio TTS (server-generated) =====
+// ===== Background Audio TTS (server-generated + WebAudio boost) =====
 const AudioTTS={
-  audio: null, playing:false,
+  audio: null, ctx:null, source:null, gainNode:null, playing:false,
   ensureAudio(){
     if(!this.audio){
       this.audio=document.getElementById("ttsAudio");
+      this.audio.volume = Store.baseVolume; // 0..1
     }
+    if(!this.ctx){
+      const AC = window.AudioContext || window.webkitAudioContext;
+      this.ctx = new AC();
+      this.source = this.ctx.createMediaElementSource(this.audio);
+      this.gainNode = this.ctx.createGain();
+      this.source.connect(this.gainNode).connect(this.ctx.destination);
+      this.applyBoost(Store.boostDb);
+    }
+  },
+  applyBoost(db){
+    if(!this.gainNode) return;
+    const gain = Math.pow(10, (db||0) / 20); // 0 dB -> x1, 6 dB -> x2
+    this.gainNode.gain.value = gain;
+  },
+  setBaseVolume(v){
+    if(this.audio) this.audio.volume = v; // 0..1
   },
   async fetchURL(lang,text){
     const endpoint=(Store.ttsEndpoint||"").trim();
@@ -142,6 +166,7 @@ const AudioTTS={
   },
   async playOnce(lang,text,metaTitle){
     this.ensureAudio();
+    if(this.ctx?.state==="suspended"){ try{ await this.ctx.resume(); }catch{} }
     const src=await this.fetchURL(lang,text);
     if('mediaSession' in navigator){
       navigator.mediaSession.metadata = new MediaMetadata({
@@ -171,18 +196,26 @@ const TTS={
   cancel(){ WebSpeechTTS.cancel(); AudioTTS.stop(); },
   wait(ms){ return new Promise(r=>setTimeout(r,ms)); },
   async speak(text,lang){
-    if(Store.ttsMode==="audio"){ await AudioTTS.playOnce(lang,text,text); }
+    if(Store.ttsMode==="audio"){ AudioTTS.setBaseVolume(Store.baseVolume); await AudioTTS.playOnce(lang,text,text); }
     else { await WebSpeechTTS.speak(text,lang); }
   },
-  async seqAwait(jp,en,delay){
+  async seqOnce(jp,en){
     if(Store.ttsMode==="audio"){
+      AudioTTS.setBaseVolume(Store.baseVolume);
       await AudioTTS.playOnce("ja-JP", jp, jp);
-      await this.wait(delay*1000);
+      await this.wait(Store.delayJPEN*1000);
       await AudioTTS.playOnce("en-US", en, en);
     }else{
       await WebSpeechTTS.speak(jp,"ja-JP");
-      await this.wait(delay*1000);
+      await this.wait(Store.delayJPEN*1000);
       await WebSpeechTTS.speak(en,"en-US");
+    }
+  },
+  async seqRepeat(jp,en,repeat){
+    repeat = Math.max(1, Math.min(10, repeat|0));
+    for(let i=0;i<repeat;i++){
+      await this.seqOnce(jp,en);
+      if(i<repeat-1) await this.wait(Store.delayNextJP*1000);
     }
   }
 };
@@ -250,7 +283,7 @@ const ListAuto={
       if(this.abort) break;
       const jp = it.jp; const en = it.en;
       if(!jp || !en) continue;
-      await TTS.seqAwait(jp,en,Store.delayJPEN);
+      await TTS.seqRepeat(jp,en,Store.repeatCount);
       if(this.abort) break;
       await TTS.wait(Store.delayNextJP*1000);
     }
@@ -290,7 +323,7 @@ const UI={
     document.getElementById("speakENBtn").onclick=async()=>{ ListAuto.stop(); await TTS.speak(Practice.current.en,"en-US"); };
     document.getElementById("speakSeqBtn").onclick=async()=>{
       ListAuto.stop();
-      await TTS.seqAwait(Practice.current.jp, Practice.current.en, Store.delayJPEN);
+      await TTS.seqRepeat(Practice.current.jp, Practice.current.en, Store.repeatCount);
     };
     document.getElementById("stopSpeakBtn").onclick=()=>{ ListAuto.stop(); };
 
@@ -337,7 +370,7 @@ const UI={
       alert("TTSエンドポイントを保存しました");
     };
 
-    // Delay sliders
+    // Delay & Audio controls
     const s1=document.getElementById("delayJPEN"), s2=document.getElementById("delayNextJP"),
           v1=document.getElementById("delayJPENVal"), v2=document.getElementById("delayNextJPVal");
     s1.addEventListener("input", ()=>v1.textContent=s1.value+"s");
@@ -345,6 +378,18 @@ const UI={
     s1.addEventListener("change", ()=>Store.setDelayJPEN(s1.value));
     s2.addEventListener("change", ()=>Store.setDelayNextJP(s2.value));
     this.els.delayJPEN=s1; this.els.delayNextJP=s2; this.els.delayJPENVal=v1; this.els.delayNextJPVal=v2;
+
+    const rc=document.getElementById("repeatCount"), rcv=document.getElementById("repeatCountVal");
+    rc.addEventListener("input", ()=>rcv.textContent=rc.value+"回");
+    rc.addEventListener("change", ()=>Store.setRepeatCount(rc.value));
+
+    const bv=document.getElementById("baseVolume"), bvv=document.getElementById("baseVolumeVal");
+    bv.addEventListener("input", ()=>{ bvv.textContent=bv.value; AudioTTS.setBaseVolume(parseFloat(bv.value)); });
+    bv.addEventListener("change", ()=>Store.setBaseVolume(bv.value));
+
+    const bd=document.getElementById("boostDb"), bdv=document.getElementById("boostDbVal");
+    bd.addEventListener("input", ()=>{ bdv.textContent=bd.value+" dB"; AudioTTS.applyBoost(parseInt(bd.value)); });
+    bd.addEventListener("change", ()=>Store.setBoostDb(bd.value));
 
     // TTS mode radios
     document.querySelectorAll('input[name="ttsMode"]').forEach(r=>{
@@ -411,7 +456,7 @@ const UI={
       d.addEventListener("click", ()=>Practice.setProblemById(p.id));
       d.querySelector(".mini-jp").addEventListener("click", async (e)=>{ e.stopPropagation(); ListAuto.stop(); await TTS.speak(p.jp,"ja-JP"); });
       d.querySelector(".mini-en").addEventListener("click", async (e)=>{ e.stopPropagation(); ListAuto.stop(); await TTS.speak(p.en,"en-US"); });
-      d.querySelector(".mini-seq").addEventListener("click", async (e)=>{ e.stopPropagation(); ListAuto.stop(); await TTS.seqAwait(p.jp,p.en,Store.delayJPEN); });
+      d.querySelector(".mini-seq").addEventListener("click", async (e)=>{ e.stopPropagation(); ListAuto.stop(); await TTS.seqRepeat(p.jp,p.en,Store.repeatCount); });
       this.els.problemsList.appendChild(d);
     });
   },
@@ -455,7 +500,7 @@ const UI={
       d.addEventListener("click", ()=>{ if(p?.id) Practice.setProblemById(p.id); });
       d.querySelector(".mini-jp").addEventListener("click", async (e)=>{ e.stopPropagation(); ListAuto.stop(); if(jp) await TTS.speak(jp,"ja-JP"); });
       d.querySelector(".mini-en").addEventListener("click", async (e)=>{ e.stopPropagation(); ListAuto.stop(); if(en) await TTS.speak(en,"en-US"); });
-      d.querySelector(".mini-seq").addEventListener("click", async (e)=>{ e.stopPropagation(); ListAuto.stop(); if(jp && en) await TTS.seqAwait(jp,en,Store.delayJPEN); });
+      d.querySelector(".mini-seq").addEventListener("click", async (e)=>{ e.stopPropagation(); ListAuto.stop(); if(jp && en) await TTS.seqRepeat(jp,en,Store.repeatCount); });
       this.els.histList.appendChild(d);
     });
   },
@@ -466,6 +511,14 @@ const UI={
     document.getElementById("delayNextJP").value=d2;
     document.getElementById("delayJPENVal").textContent=d1+"s";
     document.getElementById("delayNextJPVal").textContent=d2+"s";
+  },
+  initAudioControls(repeatCount,baseVolume,boostDb){
+    const rc=document.getElementById("repeatCount"), rcv=document.getElementById("repeatCountVal");
+    rc.value = repeatCount; rcv.textContent = repeatCount + "回";
+    const bv=document.getElementById("baseVolume"), bvv=document.getElementById("baseVolumeVal");
+    bv.value = baseVolume; bvv.textContent = parseFloat(baseVolume).toFixed(2);
+    const bd=document.getElementById("boostDb"), bdv=document.getElementById("boostDbVal");
+    bd.value = boostDb; bdv.textContent = boostDb + " dB";
   },
   initTTSMode(mode, endpoint){
     document.querySelectorAll('input[name="ttsMode"]').forEach(r=>{ r.checked = (r.value===mode); });

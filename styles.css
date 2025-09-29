@@ -52,7 +52,7 @@ input[type="file"]{ display:none; }
 input, select{ padding:8px 10px; border:1px solid #ddd; border-radius:8px; width:100%; max-width:520px; }
 hr{ border:none; height:1px; background:#eee; margin:12px 0; }
 
-.slider{ display:flex; flex-direction:column; gap:6px; width:100%; max-width:420px; }
+.slider{ display:flex; flex-direction:column; gap:6px; width:100%; max-width:520px; }
 .slider input[type=range]{ width:100%; }
 .tts-row{ flex-wrap:wrap; }
 .switch{ display:flex; align-items:center; gap:6px; }

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0f62fe" />
-  <title>和英正順PWA v3.1 – 背景再生 + 一覧自動再生</title>
+  <title>和英正順PWA v3.2 – リピート & 音量</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -13,7 +13,7 @@
 </head>
 <body>
 <header>
-  <h1>和英正順アプリ（PWA）v3.1 – 背景再生</h1>
+  <h1>和英正順アプリ（PWA）v3.2 – 背景再生 / リピート / 音量</h1>
   <nav>
     <button data-tab="practice" class="active">練習</button>
     <button data-tab="problems">問題</button>
@@ -101,6 +101,32 @@
     </div>
 
     <div class="card">
+      <h3>TTS設定（リピート・音量）</h3>
+      <div class="row">
+        <label class="slider">
+          1項目のリピート回数（1〜10）
+          <input type="range" min="1" max="10" step="1" id="repeatCount">
+          <span id="repeatCountVal"></span>
+        </label>
+      </div>
+      <div class="row">
+        <label class="slider">
+          再生音量（0〜1.0）※端末音量も影響
+          <input type="range" min="0" max="1" step="0.01" id="baseVolume">
+          <span id="baseVolumeVal"></span>
+        </label>
+      </div>
+      <div class="row">
+        <label class="slider">
+          背景再生用ブースト（dB, 0〜+12）
+          <input type="range" min="0" max="12" step="1" id="boostDb">
+          <span id="boostDbVal"></span>
+        </label>
+      </div>
+      <p class="note">※ブーストは「背景再生オーディオ」モードのときのみ有効（Web Speechは端末音量とアプリ音量=1.0が上限）。</p>
+    </div>
+
+    <div class="card">
       <h3>読み上げ（TTS）モード</h3>
       <div class="row">
         <label><input type="radio" name="ttsMode" value="webspeech"> Web Speech（端末内・簡易）</label>
@@ -135,10 +161,10 @@
   </section>
 </main>
 
-<audio id="ttsAudio" preload="auto"></audio>
+<audio id="ttsAudio" preload="auto" crossorigin="anonymous"></audio>
 
 <footer>
-  <span>和英正順PWA v3.1 – 背景再生</span>
+  <span>和英正順PWA v3.2 – リピート & 音量</span>
   <span class="flex"></span>
   <a id="installHint" href="#" class="install-hint hidden">ホーム画面に追加</a>
 </footer>
