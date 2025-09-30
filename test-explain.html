@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Explain Tester</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hiragino Sans", "Noto Sans JP", sans-serif; margin: 24px; line-height: 1.6; }
+    .card { border: 1px solid #ddd; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+    label { display:block; font-weight: 600; margin-top: 8px; }
+    input[type="password"], input[type="text"], textarea { width: 100%; padding: 10px; border:1px solid #ccc; border-radius:8px; }
+    textarea { min-height: 120px; white-space: pre-wrap; }
+    button { padding: 10px 16px; border: none; border-radius: 10px; cursor: pointer; }
+    .primary { background: #2d6cdf; color: #fff; }
+    .muted { background: #eee; }
+    .row { display:flex; gap:12px; flex-wrap: wrap; align-items: center; }
+    small { color:#666; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+  </style>
+</head>
+<body>
+  <h1>Explain Tester（OpenAI直呼び出し）</h1>
+
+  <div class="card">
+    <h2>1) OpenAI APIキー</h2>
+    <label>API Key（例: <span class="mono">sk-...</span>）</label>
+    <input id="key" type="password" placeholder="sk-..." autocomplete="off">
+    <div class="row" style="margin-top:8px;">
+      <button class="primary" id="saveKey">保存</button>
+      <button class="muted" id="showKey">表示/非表示</button>
+      <small id="keyStatus"></small>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>2) 解説テスト</h2>
+    <label>日本文（任意）</label>
+    <input id="jp" type="text" placeholder="舌部分切除後、RFFFで再建した。">
+    <label>英文（必須）</label>
+    <input id="en" type="text" value="We inset a radial forearm free flap after partial glossectomy.">
+    <div class="row" style="margin-top:8px;">
+      <button class="primary" id="run">解説を取得</button>
+      <small id="runStatus"></small>
+    </div>
+    <label style="margin-top:12px;">解説（結果）</label>
+    <textarea id="out" readonly></textarea>
+  </div>
+
+  <p>※ これはテスト用ページです。問題なく動いたら、アプリ本体の「解説」ボタンからも同様に動作するはずです。</p>
+
+  <script type="module">
+    import './js/explain.js'; // window.getExplanation を提供
+
+    const keyInput = document.getElementById('key');
+    const saveBtn  = document.getElementById('saveKey');
+    const showBtn  = document.getElementById('showKey');
+    const keyStatus= document.getElementById('keyStatus');
+
+    const jpInput  = document.getElementById('jp');
+    const enInput  = document.getElementById('en');
+    const runBtn   = document.getElementById('run');
+    const runStatus= document.getElementById('runStatus');
+    const outArea  = document.getElementById('out');
+
+    function refreshKeyStatus() {
+      const v = localStorage.getItem('openai_api_key');
+      keyStatus.textContent = v ? 'この端末に保存済みです。' : '未設定です。';
+    }
+    refreshKeyStatus();
+
+    saveBtn.onclick = () => {
+      const v = (keyInput.value || '').trim();
+      if (!/^sk-/.test(v)) {
+        alert('sk- から始まるキーを入力してください。');
+        return;
+      }
+      localStorage.setItem('openai_api_key', v);
+      keyInput.value = '';
+      refreshKeyStatus();
+      alert('保存しました（この端末のみ有効）');
+    };
+
+    let hidden = true;
+    showBtn.onclick = () => {
+      hidden = !hidden;
+      keyInput.type = hidden ? 'password' : 'text';
+    };
+
+    runBtn.onclick = async () => {
+      runBtn.disabled = true;
+      runStatus.textContent = '問い合わせ中...';
+      outArea.value = '';
+      try {
+        const text = await window.getExplanation({
+          jp: jpInput.value,
+          en: enInput.value,
+          level: 'intermediate',
+          style: 'concise'
+        });
+        outArea.value = text;
+        runStatus.textContent = '成功';
+      } catch (e) {
+        outArea.value = `エラー: ${e.message}`;
+        runStatus.textContent = '失敗';
+      } finally {
+        runBtn.disabled = false;
+      }
+    };
+  </script>
+</body>
+</html>
