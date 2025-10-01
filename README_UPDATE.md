@@ -1,57 +1,55 @@
-# ランダム＆全網羅 出題パッチ（PWA Random Cover Patch v1）
+# スワイプで前後移動パッチ（PWA Swipe Navigation Patch v1）
 
-**目的**：練習モードで「同じデータセット内の問題をランダム順に出しつつ、重複なく全問を出題」し、全問終わったら自動で再シャッフルして次ラウンドに入るようにします。**他の仕様は変更しません。**
+**目的**：練習画面で「左スワイプ＝次」「右スワイプ＝前」に対応。既存仕様は変更しません。
 
 ## 同梱ファイル
-- `js/scheduler.js` … ランダム無重複の出題順を管理するクラス `DeckScheduler`
+- `js/swipe-nav.js` … スワイプ検出
+- `js/practice_navigator.js` … 履歴つき next()/prev()
 
-## 使い方（最小変更）
-1. GitHub のリポジトリで **Add file → Upload files** を押し、`js/scheduler.js` をアップロード（フォルダが無ければ自動作成）。  
-2. あなたのアプリの **練習画面を制御しているJS**（例：`app.js` / `practice.js` / `main.js`）で、**「次の問題を選ぶ箇所」**を以下のように差し替えます。
-
-### A. モジュールとして読み込む場合（推奨）
-HTML のどこかに次を追加：
+## 導入
+1. GitHub → Code → **Add file → Upload files**  
+   **`js/swipe-nav.js` と `js/practice_navigator.js`** をアップロード（`js` が無ければ自動作成）。
+2. 練習ページの HTML に読み込みを追加：
 ```html
-<script type="module" src="./js/scheduler.js"></script>
+<script type="module" src="./js/swipe-nav.js"></script>
+<script type="module" src="./js/practice_navigator.js"></script>
 ```
-JS 側（データ読み込み後の初期化処理）に：
-```js
-// problems: 現在のデータセットの配列（既存と同じ配列を使ってください）
-// deckId: データセット識別子（ファイル名やカテゴリ名など。無ければ任意の固定文字列）
-const scheduler = new DeckScheduler({ items: problems, deckId: currentDeckId });
+3. 練習ロジックに最小差分で組み込み：
 
-function nextProblem() {
-  const { item, index, round } = scheduler.next();
-  renderPractice(item);   // ←既存の描画関数を呼ぶだけ
-}
+### A) 既に nextProblem()/prevProblem() がある場合
+```js
+import { initSwipeNavigation } from './js/swipe-nav.js';
+const container = document.getElementById('practice-root') || document.body;
+initSwipeNavigation({ container, onSwipeLeft: ()=>nextProblem(), onSwipeRight: ()=>prevProblem() });
 ```
 
-### B. 既存の Math.random() を置き換える
-**置き換え前（例）**
+### B) 「前へ」が未実装のとき（履歴ナビを利用）
 ```js
-const i = Math.floor(Math.random() * problems.length);
-const item = problems[i];
-```
-**置き換え後**
-```js
-const { item } = scheduler.next(); // 無重複 & 全網羅
+import { initSwipeNavigation } from './js/swipe-nav.js';
+import { PracticeNavigator } from './js/practice_navigator.js';
+import { DeckScheduler } from './js/scheduler.js'; // 導入済みなら
+
+const scheduler = window.DeckScheduler ? new DeckScheduler({ items: problems, deckId: currentDeckId }) : null;
+const nav = new PracticeNavigator({
+  getNextItem: () => scheduler ? scheduler.next() : { item: problems[Math.floor(Math.random()*problems.length)] },
+  onRender: (item) => renderPractice(item),
+  deckId: currentDeckId
+});
+nav.start();
+
+window.nextProblem = () => nav.next();
+window.prevProblem = () => nav.prev();
+
+const container = document.getElementById('practice-root') || document.body;
+initSwipeNavigation({ container, onSwipeLeft: ()=>nav.next(), onSwipeRight: ()=>nav.prev() });
 ```
 
-## 仕様
-- **無重複保証**：ラウンド内で同じ問題は出ません（全問出題）。
-- **全問後**：自動で新しいランダム順にシャッフルして次ラウンドへ。
-- **永続化**：順序と位置を `localStorage` に保存し、リロード後も続きから再開（データセットが変われば自動リセット）。
-- **他機能**（履歴、検索、TTS、自動再生、PWA）は変更しません。
-
-## よくある統合ポイント
-- データセット切替時：
-```js
-scheduler = new DeckScheduler({ items: problems, deckId: newDeckId });
-```
-- 残り件数：`scheduler.remaining()`  
-- リセット：`scheduler.reset()`
+## 補足
+- 既定のスワイプ判定: 横40px以上/縦100px以下/600ms以内
+- PC ではマウスのドラッグでも左右判定
+- 履歴は localStorage に保存（再読み込み後も「前へ」が使えます）
 
 ## 反映されない場合（PWAキャッシュ）
-- PC：Shift+再読み込み / DevTools → Application → Service Workers → Unregister  
-- iPhone：設定 → Safari → 詳細 → Webサイトデータ → 対象サイトを削除  
-- `<script src="./js/scheduler.js?v=2">` のようにクエリを付加
+- PC：Shift+再読み込み／DevTools→Application→Service Workers→Unregister
+- iPhone：設定→Safari→詳細→Webサイトデータ→該当サイトを削除
+- `<script src="./js/swipe-nav.js?v=2">` のように `?v=` を足す
