@@ -1,33 +1,55 @@
-# PWA Explainer Patch v3（GitHubに差し替えるだけ）
+# スワイプで前後移動パッチ（PWA Swipe Navigation Patch v1）
 
-このパッチは **「解説」機能のみを確実に動かす** 最小変更です。既存の UI / CSV / 音声 / PWA 設定には触れません。
+**目的**：練習画面で「左スワイプ＝次」「右スワイプ＝前」に対応。既存仕様は変更しません。
 
 ## 同梱ファイル
-- `js/explain.js` … OpenAI へ直接問い合わせる堅牢版（APIキーは localStorage から読む）
-- `test-explain.html` … 解説の単体テストページ（動作確認用）
+- `js/swipe-nav.js` … スワイプ検出
+- `js/practice_navigator.js` … 履歴つき next()/prev()
 
-## アップロード手順（GitHub UI）
-1. GitHub で公開リポジトリを開く → **Code** タブ  
-2. キーボードの **T** を押す（iPhone は「Go to file」）→ `js` フォルダを探す  
-   - もし `js` が無ければ、この後のアップロードで自動作成されます  
-3. 右上 **Add file → Upload files** を押す  
-4. このパッチの中から **`js/explain.js` と `test-explain.html`** をドラッグ＆ドロップ（iPhoneはファイル選択）  
-5. 下部の **Commit changes** を押す（メッセージ例：`feat: replace explainer`）
+## 導入
+1. GitHub → Code → **Add file → Upload files**  
+   **`js/swipe-nav.js` と `js/practice_navigator.js`** をアップロード（`js` が無ければ自動作成）。
+2. 練習ページの HTML に読み込みを追加：
+```html
+<script type="module" src="./js/swipe-nav.js"></script>
+<script type="module" src="./js/practice_navigator.js"></script>
+```
+3. 練習ロジックに最小差分で組み込み：
 
-> 既に `js/explain.js` がある場合は **上書き** になります。  
-> 解説関連の JS が別名ファイルに入っている場合は、そのファイルを開いて鉛筆アイコン **Edit** → 中身をこの `getExplanation` で置き換えてください。
+### A) 既に nextProblem()/prevProblem() がある場合
+```js
+import { initSwipeNavigation } from './js/swipe-nav.js';
+const container = document.getElementById('practice-root') || document.body;
+initSwipeNavigation({ container, onSwipeLeft: ()=>nextProblem(), onSwipeRight: ()=>prevProblem() });
+```
+
+### B) 「前へ」が未実装のとき（履歴ナビを利用）
+```js
+import { initSwipeNavigation } from './js/swipe-nav.js';
+import { PracticeNavigator } from './js/practice_navigator.js';
+import { DeckScheduler } from './js/scheduler.js'; // 導入済みなら
+
+const scheduler = window.DeckScheduler ? new DeckScheduler({ items: problems, deckId: currentDeckId }) : null;
+const nav = new PracticeNavigator({
+  getNextItem: () => scheduler ? scheduler.next() : { item: problems[Math.floor(Math.random()*problems.length)] },
+  onRender: (item) => renderPractice(item),
+  deckId: currentDeckId
+});
+nav.start();
+
+window.nextProblem = () => nav.next();
+window.prevProblem = () => nav.prev();
+
+const container = document.getElementById('practice-root') || document.body;
+initSwipeNavigation({ container, onSwipeLeft: ()=>nav.next(), onSwipeRight: ()=>nav.prev() });
+```
+
+## 補足
+- 既定のスワイプ判定: 横40px以上/縦100px以下/600ms以内
+- PC ではマウスのドラッグでも左右判定
+- 履歴は localStorage に保存（再読み込み後も「前へ」が使えます）
 
 ## 反映されない場合（PWAキャッシュ）
-- PC：Shift+再読み込み（または DevTools → Application → Service Workers → Unregister）  
-- iPhone：設定 → Safari → 詳細 → **Webサイトデータ** → 該当サイトを削除 → 再アクセス  
-- あるいは HTML の `<script src="js/explain.js">` のURL末尾に `?v=2` のようなクエリを付けて更新を促進
-
-## テスト方法
-1. 公開サイトで `test-explain.html` を開く（例：`https://<username>.github.io/<repo>/test-explain.html`）  
-2. `sk-...` の OpenAI APIキーを入力 → **保存**  
-3. 英文を入れて **解説を取得** をクリック  
-4. 正しく解説が表示されれば、アプリ本体の「解説」ボタンも同様に動作します
-
-## 注意
-- API キーは **あなたの端末の localStorage** に保存されます。公開・配布は非推奨です（自分専用でご利用ください）。
-- モデル名は `gpt-4o-mini` を既定にしています。必要なら `js/explain.js` の引数 `model` を変更してください。
+- PC：Shift+再読み込み／DevTools→Application→Service Workers→Unregister
+- iPhone：設定→Safari→詳細→Webサイトデータ→該当サイトを削除
+- `<script src="./js/swipe-nav.js?v=2">` のように `?v=` を足す
