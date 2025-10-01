@@ -1,8 +1,4 @@
 // js/explain.js
-// Robust explanation fetcher using OpenAI (direct from browser).
-// Reads API key from localStorage('openai_api_key').
-// Exports getExplanation and also sets window.getExplanation for legacy code.
-
 export async function getExplanation({ jp, en, level = 'intermediate', style = 'concise', model = 'gpt-4o-mini' }) {
   const key = (localStorage.getItem('openai_api_key') || '').trim();
   if (!key) throw new Error('OpenAI APIキーが未設定です。設定画面で保存してください。');
@@ -28,7 +24,6 @@ Keep it compact and faithful to the sentence.`;
     } finally { clearTimeout(id); }
   }
 
-  // 1) Chat Completions
   const comp = await fetchJSON('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${key}` },
@@ -44,10 +39,8 @@ Keep it compact and faithful to the sentence.`;
   if (!comp.ok && (comp.status === 401 || comp.status === 404 || comp.status === 429)) {
     throw new Error(`OpenAIエラー ${comp.status}: ${comp.raw || JSON.stringify(comp.json)}`);
   }
-
   let text = comp?.json?.choices?.[0]?.message?.content?.trim?.() || '';
 
-  // 2) Fallback: Responses API
   if (!text) {
     const resp = await fetchJSON('https://api.openai.com/v1/responses', {
       method: 'POST',
@@ -78,7 +71,4 @@ Keep it compact and faithful to the sentence.`;
   }
   return text;
 }
-
-if (typeof window !== 'undefined') {
-  window.getExplanation = async (args) => getExplanation(args);
-}
+if (typeof window !== 'undefined') { window.getExplanation = async (args) => getExplanation(args); }
