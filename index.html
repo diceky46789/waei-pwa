@@ -1,87 +1,188 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>和英正順アプリ (Touch & Drop版)</title>
-  <link rel="stylesheet" href="style.css" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>和英正順トレーナー v3</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#0b57d0">
+  <link rel="icon" href="assets/icon-192.png">
+  <style>
+    :root {
+      --bg:#fafafa; --fg:#111; --muted:#666; --pri:#0b57d0; --card:#fff; --bd:#e5e5e5;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Hiragino Sans","Noto Sans JP",sans-serif}
+    header{position:sticky;top:0;background:#fff;border-bottom:1px solid var(--bd);z-index:10}
+    header .bar{display:flex;align-items:center;gap:8px;padding:10px 12px}
+    h1{font-size:18px;margin:0;flex:1}
+    nav.tabs{display:flex;border-bottom:1px solid var(--bd)}
+    nav.tabs button{flex:1;padding:10px;border:0;background:#fff;cursor:pointer}
+    nav.tabs button.active{border-bottom:3px solid var(--pri);font-weight:700}
+    main{max-width:980px;margin:0 auto;padding:16px}
+    .card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:16px;margin:12px 0}
+    .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+    .btn{padding:10px 14px;border-radius:10px;border:1px solid var(--bd);background:#fff;cursor:pointer}
+    .btn.pri{background:var(--pri);border-color:var(--pri);color:#fff}
+    input[type="file"], input[type="text"], input[type="number"], input[type="password"], select{
+      padding:10px;border:1px solid var(--bd);border-radius:8px
+    }
+    .list{display:grid;gap:8px}
+    .item{padding:12px;border:1px solid var(--bd);border-radius:10px;background:#fff}
+    .item .meta{color:var(--muted);font-size:12px}
+    .sentence{font-size:22px;line-height:1.5;font-weight:800;letter-spacing:0.2px}
+    .muted{color:var(--muted)}
+    .pill{padding:2px 8px;border:1px solid var(--bd);border-radius:99px;font-size:12px}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    @media (max-width:800px){.grid2{grid-template-columns:1fr}}
+    .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#111;color:#fff;padding:10px 14px;border-radius:8px;opacity:0;transition:opacity .2s}
+    .toast.show{opacity:0.9}
+    .swipeHint{font-size:12px;color:#777;margin-top:6px}
+    .scroll-area{scroll-margin:80px}
+  </style>
 </head>
 <body>
-<header>
-  <h1>和英正順アプリ</h1>
-  <div class="sub">タッチ＆ドロップで挿入・入れ替え可（他の仕様は維持）</div>
-  <div id="progress"></div>
-</header>
+  <header>
+    <div class="bar">
+      <h1>和英正順トレーナー v3</h1>
+      <button class="btn" id="installBtn" hidden>インストール</button>
+    </div>
+    <nav class="tabs">
+      <button data-tab="problems" class="active">問題</button>
+      <button data-tab="practice">練習</button>
+      <button data-tab="history">履歴</button>
+      <button data-tab="settings">設定</button>
+    </nav>
+  </header>
 
-<main>
-  <section class="panel info">
-    <div class="row">
-      <div class="cell">
-        <div class="label">日本語</div>
-        <div id="jp" class="jp"></div>
+  <main>
+    <section id="tab-problems" class="tab card">
+      <div class="row">
+        <input id="searchProblems" type="text" placeholder="検索（日本語/英語）" style="flex:1">
+        <label class="pill"><input type="checkbox" id="autoPlayProblems"> 自動再生</label>
+        <button class="btn" id="playAllProblems">▶︎ 全て再生</button>
+        <input type="file" id="csvInput" accept=".csv">
+        <button class="btn" id="addBuiltin">内蔵20問を読み込む</button>
       </div>
-      <div class="cell">
-        <div class="label">英語（正解）</div>
-        <div id="answer" class="answer hidden"></div>
+      <div id="problemsList" class="list"></div>
+    </section>
+
+    <section id="tab-practice" class="tab card" hidden>
+      <div id="practice-root" class="scroll-area">
+        <div class="row">
+          <span class="pill" id="deckInfo">deck</span>
+          <span class="pill" id="roundInfo">round</span>
+          <span class="pill" id="remainInfo">remain</span>
+        </div>
+        <div style="margin-top:8px" class="muted swipeHint">左へスワイプ：次の問題 ／ 右へスワイプ：前の問題</div>
+
+        <h3>日本文</h3>
+        <div id="jpText" class="sentence"></div>
+        <div class="row">
+          <button class="btn" id="speakJP">日本語▶︎</button>
+        </div>
+
+        <h3 style="margin-top:12px;">英語（並び替え）</h3>
+        <div id="tokens" class="sentence"></div>
+        <div class="row">
+          <button class="btn" id="checkBtn">答え合わせ</button>
+          <button class="btn" id="revealBtn">正解を表示</button>
+          <button class="btn" id="speakEN">英語▶︎</button>
+          <button class="btn" id="explainBtn">解説（OpenAI）</button>
+        </div>
+
+        <div class="card" id="answerCard" style="margin-top:14px; display:none;">
+          <div class="muted">正解</div>
+          <div id="answer" class="sentence"></div>
+          <div id="explain" style="white-space:pre-wrap;margin-top:10px;"></div>
+        </div>
+
+        <div class="row" style="margin-top:16px;">
+          <button class="btn pri" id="prevBtn">◀︎ 前の問題</button>
+          <button class="btn pri" id="nextBtn">次の問題 ▶︎</button>
+        </div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <section class="panel builder" id="builderPanel">
-    <div class="label">組み立て中の英文</div>
-    <div id="builder" class="builder-area" aria-label="builder"></div>
-  </section>
+    <section id="tab-history" class="tab card" hidden>
+      <div class="row">
+        <input id="searchHistory" type="text" placeholder="検索（日本語/英語/解説）" style="flex:1">
+        <label class="pill"><input type="checkbox" id="autoPlayHistory"> 自動再生</label>
+        <button class="btn" id="clearHistory">履歴を消去</button>
+      </div>
+      <div id="historyList" class="list"></div>
+    </section>
 
-  <section class="panel bank">
-    <div class="label">単語バンク（タッチ＆ドロップで追加／戻す）</div>
-    <div id="bank" class="bank-area" aria-label="bank"></div>
-  </section>
+    <section id="tab-settings" class="tab card" hidden>
+      <h3>OpenAI（解説生成・自分専用）</h3>
+      <div class="grid2">
+        <div>
+          <label>API Key（sk-...）</label>
+          <input id="apiKey" type="password" placeholder="sk-..." autocomplete="off">
+          <div class="row">
+            <button class="btn" id="saveKey">保存</button>
+            <button class="btn" id="testExplain">テスト（英1文）</button>
+          </div>
+          <div class="muted">キーはこの端末のみに保存（localStorage）。公開・配布は避けてください。</div>
+        </div>
+        <div>
+          <label>モデル</label>
+          <select id="modelSel">
+            <option>gpt-4o-mini</option>
+            <option>gpt-4o</option>
+            <option>gpt-4.1-mini</option>
+          </select>
+        </div>
+      </div>
 
-  <section class="panel controls">
-    <button id="btnCheck" class="primary">採点</button>
-    <button id="btnHint">ヒント</button>
-    <button id="btnReveal">答えを表示</button>
-    <button id="btnClear">クリア</button>
-    <button id="btnUndo">一手戻す</button>
-  </section>
+      <h3 style="margin-top:20px;">読み上げ（TTS）</h3>
+      <div class="grid2">
+        <div>
+          <label>日本語の声</label>
+          <select id="jpVoice"></select>
+          <label>英語の声</label>
+          <select id="enVoice"></select>
+          <div class="row">
+            <div>
+              <label>JP→EN 待ち</label>
+              <input id="delayJPEN" type="number" min="0.5" max="10" step="0.5" value="1.0"> 秒
+            </div>
+            <div>
+              <label>次のJPまでの待ち</label>
+              <input id="delayNext" type="number" min="0.5" max="10" step="0.5" value="1.0"> 秒
+            </div>
+          </div>
+          <div class="row">
+            <div>
+              <label>リピート回数</label>
+              <input id="repeatCount" type="number" min="1" max="10" step="1" value="1">
+            </div>
+            <div>
+              <label>音量</label>
+              <input id="volume" type="number" min="0" max="1" step="0.1" value="1">
+            </div>
+          </div>
+        </div>
+        <div>
+          <button class="btn" id="playPracticeAuto">練習：自動再生（今の問題）</button>
+          <div class="muted">Problems/History の各行にも再生ボタンがあります。自動再生ONでリスト連続再生可。</div>
+        </div>
+      </div>
 
-  <section class="panel nav">
-    <button id="btnPrev">〈 前へ</button>
-    <button id="btnNext">次へ 〉</button>
-  </section>
+      <h3 style="margin-top:20px;">その他</h3>
+      <div class="row">
+        <button class="btn" id="exportHistory">履歴CSVエクスポート</button>
+        <button class="btn" id="resetOrder">ランダム順リセット</button>
+      </div>
+    </section>
+  </main>
 
-  <section class="panel status">
-    <div id="feedback"></div>
-  </section>
+  <div class="toast" id="toast"></div>
 
-  <section class="panel import">
-    <details>
-      <summary>データセットの読み込み / 置き換え</summary>
-      <p>JSON または CSV（ヘッダー: <code>jp</code>, <code>en</code>, 任意で <code>hint</code>, <code>explain</code>）を読み込めます。</p>
-      <input type="file" id="fileInput" accept=".json,.csv" />
-      <button id="btnExport">学習履歴をエクスポート</button>
-      <button id="btnResetHistory">学習履歴リセット</button>
-    </details>
-  </section>
-</main>
-
-<footer>
-  <button id="btnHistory">履歴を見る</button>
-</footer>
-
-<div id="historyModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="historyTitle">
-  <div class="modal-content">
-    <div class="modal-header">
-      <h2 id="historyTitle">学習履歴</h2>
-      <button id="closeHistory" class="icon-btn" aria-label="閉じる">×</button>
-    </div>
-    <div class="modal-body">
-      <input id="historySearch" placeholder="検索（日本語/英語）" />
-      <div id="historyList" class="history-list"></div>
-    </div>
-  </div>
-</div>
-
-<script src="app.js"></script>
+  <script type="module" src="js/scheduler.js"></script>
+  <script type="module" src="js/swipe-nav.js"></script>
+  <script type="module" src="js/practice_navigator.js"></script>
+  <script type="module" src="js/explain.js"></script>
+  <script type="module" src="app.js"></script>
 </body>
 </html>

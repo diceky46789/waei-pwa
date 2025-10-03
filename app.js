@@ -1,518 +1,298 @@
-// 和英正順アプリ (Touch & Drop 版)
-// 仕様：
-// - タッチ＆ドロップで単語を「組み立てエリア」の好きな位置へ挿入可能
-// - 組み立て中の単語はドラッグで入れ替え可能（ドロップ位置で再配置）
-// - 単語をバンク↔組み立て間で往復可能（戻す/追加）
-// - 左右スワイプ：前へ/次へ（モバイル対応）
-// - 出題順：1周網羅のシャッフルキュー（全問出たら再シャッフル）
-// - 履歴保存/検索、CSV/JSONインポート、履歴エクスポート、リセット
-// 既存仕様に影響しないよう、UIとキーバインドは従来通り
+// app.js — Drag&Drop reorder/insert, full features
+import { DeckScheduler } from './js/scheduler.js';
+import { PracticeNavigator } from './js/practice_navigator.js';
+import { initSwipeNavigation } from './js/swipe-nav.js';
+import { getExplanation } from './js/explain.js';
 
-const $ = (sel) => document.querySelector(sel);
-const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+const $ = (sel, p=document) => p.querySelector(sel);
+const $$ = (sel, p=document) => Array.from(p.querySelectorAll(sel));
 
-// ---------- ユーティリティ ----------
-const shuffle = (arr) => {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-};
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('./service-worker.js');
+let deferredPrompt=null;
+window.addEventListener('beforeinstallprompt', (e)=>{ e.preventDefault(); deferredPrompt=e; $('#installBtn').hidden=false; });
+$('#installBtn').onclick = async () => { if(deferredPrompt){deferredPrompt.prompt(); await deferredPrompt.userChoice;} };
 
-const tokenize = (sentence) => {
-  // 句読点を分離。シンプル実装
-  return sentence
-    .replace(/([.,!?;:])/g, " $1 ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .split(" ");
-};
+let problems=[], scheduler=null, nav=null, currentDeckId='builtin', current=null, voices=[];
+let settings = { jpVoice:'', enVoice:'', delayJPEN:1.0, delayNext:1.0, repeatCount:1, volume:1, model:'gpt-4o-mini' };
 
-const detokenize = (tokens) => {
-  // 空白処理（句読点前の空白解除）
-  const s = tokens.join(" ").replace(/\s+([.,!?;:])/g, "$1");
-  return s;
-};
+function showToast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'), 1400); }
+function normalizeEN(s=''){ return s.replace(/[’‘']/g, "'").replace(/\s+/g,' ').trim(); }
+function escapeHtml(s=''){ return s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function sleep(ms){ return new Promise(r=>setTimeout(r, ms)); }
+function smoothScrollInto(el){ if(!el) return; el.scrollIntoView({behavior:'smooth', block:'center'}); }
+function clamp(x,a,b){ return Math.max(a, Math.min(b, x)); }
 
-// ---------- データ ----------
-const DEFAULT_DATA = [
-  { jp: "私は明日あなたに電話します。", en: "I will call you tomorrow.", hint: "未来の予定: will + 原形", explain: "will の後は動詞の原形。時を表す副詞 tomorrow は文末。" },
-  { jp: "彼は手術の準備をしています。", en: "He is preparing for the surgery.", hint: "進行形", explain: "be動詞 + V-ing で進行形。for the surgery で『手術のために』。" },
-  { jp: "この薬は食後に飲んでください。", en: "Please take this medicine after meals.", hint: "命令形", explain: "Please + 動詞原形 で丁寧な依頼。" },
-  { jp: "看護師は患者の状態を確認した。", en: "The nurse checked the patient's condition.", hint: "過去形", explain: "checked は過去。所有格は the patient's。" },
-  { jp: "私は新しい技術を学びたい。", en: "I want to learn new techniques.", hint: "to不定詞", explain: "want to + 動詞原形。" },
-  { jp: "あなたは出血を止めなければならない。", en: "You must stop the bleeding.", hint: "義務", explain: "must + 動詞原形。" },
-  { jp: "彼女は腫れが引いたと言った。", en: "She said the swelling had gone down.", hint: "過去完了含む報告", explain: "said の目的節で had + 過去分詞。" },
-  { jp: "感染を避けるには手を洗いましょう。", en: "To avoid infection, wash your hands.", hint: "不定詞の副詞的用法", explain: "To avoid ~, 命令文。" },
-  { jp: "医師は患者に十分な説明を提供する。", en: "Doctors provide patients with sufficient explanations.", hint: "SVOO", explain: "provide A with B 構文。" },
-  { jp: "この手順は慎重さを必要とする。", en: "This procedure requires caution.", hint: "三単現", explain: "三人称単数 requires。" }
-];
-
-// ローカルストレージキー
-const LS_DATA = "woa_data_v3";
-const LS_QUEUE = "woa_queue_v3";
-const LS_IDX = "woa_idx_v3";
-const LS_HISTORY = "woa_history_v3";
-
-let DATA = JSON.parse(localStorage.getItem(LS_DATA) || "null") || DEFAULT_DATA;
-let QUEUE = JSON.parse(localStorage.getItem(LS_QUEUE) || "null") || [];
-let IDX = parseInt(localStorage.getItem(LS_IDX) || "0", 10);
-let HISTORY = JSON.parse(localStorage.getItem(LS_HISTORY) || "[]");
-
-// キュー初期化（全問網羅）
-function ensureQueue() {
-  if (!QUEUE.length) {
-    QUEUE = shuffle([...Array(DATA.length)].map((_, i) => i));
-    localStorage.setItem(LS_QUEUE, JSON.stringify(QUEUE));
-  }
-  if (IDX >= QUEUE.length) {
-    IDX = 0;
-  }
-  localStorage.setItem(LS_IDX, String(IDX));
-}
-
-function currentItem() {
-  ensureQueue();
-  const qi = QUEUE[IDX];
-  return { idx: qi, item: DATA[qi] };
-}
-
-function gotoNext() {
-  ensureQueue();
-  IDX++;
-  if (IDX >= QUEUE.length) {
-    // 全問出題済 → 再シャッフル
-    QUEUE = shuffle([...Array(DATA.length)].map((_, i) => i));
-    IDX = 0;
-    localStorage.setItem(LS_QUEUE, JSON.stringify(QUEUE));
-  }
-  localStorage.setItem(LS_IDX, String(IDX));
-  loadCurrent();
-}
-
-function gotoPrev() {
-  ensureQueue();
-  IDX = (IDX - 1 + QUEUE.length) % QUEUE.length;
-  localStorage.setItem(LS_IDX, String(IDX));
-  loadCurrent();
-}
-
-// ---------- UI構築 ----------
-const jpEl = $("#jp");
-const ansEl = $("#answer");
-const builderEl = $("#builder");
-const bankEl = $("#bank");
-const progressEl = $("#progress");
-const feedbackEl = $("#feedback");
-
-const btnCheck = $("#btnCheck");
-const btnHint = $("#btnHint");
-const btnReveal = $("#btnReveal");
-const btnClear = $("#btnClear");
-const btnUndo = $("#btnUndo");
-const btnPrev = $("#btnPrev");
-const btnNext = $("#btnNext");
-
-// Undoスタック
-let undoStack = [];
-
-// トークンDOM生成
-function createToken(text, origin) {
-  const span = document.createElement("span");
-  span.className = "token";
-  span.textContent = text;
-  span.setAttribute("data-origin", origin); // 'bank' or 'builder'
-  span.setAttribute("tabindex", "0");
-  enableDrag(span);
-  enableDoubleTapRemove(span);
-  return span;
-}
-
-// ドロップゾーン生成
-function createDropzone() {
-  const dz = document.createElement("div");
-  dz.className = "dropzone";
-  return dz;
-}
-
-// Builderにドロップゾーンを挿入（単語の前後＋両端）
-function refreshDropzones() {
-  // 既存のドロップゾーン削除
-  $$(".dropzone").forEach(d => d.remove());
-  const tokens = Array.from(builderEl.querySelectorAll(".token"));
-
-  const prepend = createDropzone();
-  builderEl.insertBefore(prepend, tokens[0] || null);
-
-  tokens.forEach(tok => {
-    const dz = createDropzone();
-    builderEl.insertBefore(dz, tok.nextSibling);
-  });
-}
-
-// 現在のBuilder配列を取得
-function builderTokens() {
-  return Array.from(builderEl.querySelectorAll(".token")).map(el => el.textContent);
-}
-
-// 現在のBank配列を取得
-function bankTokens() {
-  return Array.from(bankEl.querySelectorAll(".token")).map(el => el.textContent);
-}
-
-// 履歴保存
-function pushHistory(entry) {
-  // { ts, jp, en, user, correct, hint, explain }
-  HISTORY.push({ ...entry, ts: Date.now() });
-  localStorage.setItem(LS_HISTORY, JSON.stringify(HISTORY));
-}
-
-// 画面読み込み
-function loadCurrent() {
-  undoStack = [];
-  const { idx, item } = currentItem();
-  const answer = item.en.trim();
-  const tokens = tokenize(answer);
-  const shuffled = shuffle(tokens);
-
-  jpEl.textContent = item.jp;
-  ansEl.textContent = answer;
-  ansEl.classList.add("hidden");
-  feedbackEl.textContent = "";
-
-  builderEl.innerHTML = "";
-  bankEl.innerHTML = "";
-  shuffled.forEach(t => bankEl.appendChild(createToken(t, "bank")));
-  refreshDropzones();
-  updateProgress();
-}
-
-// 進捗表示
-function updateProgress() {
-  const total = DATA.length;
-  const cur = (QUEUE[IDX] ?? 0) + 1;
-  progressEl.textContent = `全${total}問中の #${cur}（キュー位置 ${IDX + 1}/${QUEUE.length}）`;
-}
-
-// 採点
-function checkAnswer() {
-  const user = detokenize(builderTokens());
-  const correct = ansEl.textContent.trim();
-  if (!user.length) {
-    feedbackEl.textContent = "組み立て中の英文が空です。";
-    return;
-  }
-  const ok = user === correct;
-  feedbackEl.textContent = ok ? "✅ 正解！" : `❌ 不正解: 「${user}」`;
-  const { item } = currentItem();
-  pushHistory({ jp: item.jp, en: correct, user, correct: ok, hint: item.hint || "", explain: item.explain || "" });
-}
-
-// ヒント
-function showHint() {
-  const { item } = currentItem();
-  feedbackEl.textContent = item.hint ? `ヒント: ${item.hint}` : "ヒントはありません。";
-}
-
-// 答え表示/非表示トグル
-function toggleReveal() {
-  ansEl.classList.toggle("hidden");
-}
-
-// クリア
-function clearBuilder() {
-  const currentBank = bankTokens();
-  const currentBuilder = builderTokens();
-  undoStack.push({ bank: currentBank, builder: currentBuilder });
-  // すべてバンクへ戻す（追加順は維持）
-  builderEl.querySelectorAll(".token").forEach(tok => {
-    tok.setAttribute("data-origin", "bank");
-    bankEl.appendChild(tok);
-  });
-  refreshDropzones();
-}
-
-// Undo
-function undo() {
-  const last = undoStack.pop();
-  if (!last) return;
-  bankEl.innerHTML = "";
-  builderEl.innerHTML = "";
-  last.bank.forEach(t => bankEl.appendChild(createToken(t, "bank")));
-  last.builder.forEach(t => builderEl.appendChild(createToken(t, "builder")));
-  refreshDropzones();
-}
-
-// ---------- タッチ＆ドロップ（ライブラリなし） ----------
-let dragCtx = null;
-
-function enableDrag(el) {
-  el.addEventListener("pointerdown", onDragStart);
-  el.addEventListener("pointerup", onDragEnd);
-  el.addEventListener("pointercancel", onDragEnd);
-}
-
-function onDragStart(e) {
-  const target = e.currentTarget;
-  e.preventDefault();
-  target.setPointerCapture(e.pointerId);
-
-  dragCtx = {
-    el: target,
-    startX: e.clientX,
-    startY: e.clientY,
-    clone: null,
-    from: target.parentElement.id // 'bank' or 'builder'
-  };
-  target.classList.add("dragging");
-
-  // クローンを生成して追従
-  const rect = target.getBoundingClientRect();
-  const clone = target.cloneNode(true);
-  clone.style.position = "fixed";
-  clone.style.left = rect.left + "px";
-  clone.style.top = rect.top + "px";
-  clone.style.width = rect.width + "px";
-  clone.style.pointerEvents = "none";
-  clone.style.opacity = "0.85";
-  clone.classList.add("dragging");
-  document.body.appendChild(clone);
-  dragCtx.clone = clone;
-
-  window.addEventListener("pointermove", onDragMove);
-  // 有効化（ビルダーのドロップゾーン）
-  refreshDropzones();
-}
-
-function onDragMove(e) {
-  if (!dragCtx) return;
-  const { clone } = dragCtx;
-  const dx = e.clientX - dragCtx.startX;
-  const dy = e.clientY - dragCtx.startY;
-  const left = parseFloat(clone.style.left) + dx;
-  const top = parseFloat(clone.style.top) + dy;
-  clone.style.left = left + "px";
-  clone.style.top = top + "px";
-  dragCtx.startX = e.clientX;
-  dragCtx.startY = e.clientY;
-
-  // ホバー中のドロップゾーンをハイライト
-  let active = null;
-  $$(".dropzone").forEach(dz => {
-    const r = dz.getBoundingClientRect();
-    const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
-    dz.classList.toggle("active", inside);
-    if (inside) active = dz;
-  });
-  dragCtx.activeZone = active;
-
-  // 既存トークンへのスワップ（builder内）
-  dragCtx.swapTarget = null;
-  if (dragCtx.from === "builder") {
-    const toks = $$("#builder .token");
-    for (const t of toks) {
-      const r = t.getBoundingClientRect();
-      const inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
-      if (inside && t !== dragCtx.el) {
-        t.classList.add("dragging");
-        dragCtx.swapTarget = t;
-      } else {
-        t.classList.remove("dragging");
-      }
-    }
-  }
-}
-
-function onDragEnd(e) {
-  if (!dragCtx) return;
-  const { el, clone, from, activeZone, swapTarget } = dragCtx;
-
-  // Undo用スナップショット
-  undoStack.push({ bank: bankTokens(), builder: builderTokens() });
-
-  // 1) スワップ優先（builder内でトークン上にドロップ）
-  if (swapTarget && from === "builder") {
-    const parent = builderEl;
-    const a = el;
-    const b = swapTarget;
-    // a と b の位置を入れ替え
-    const aNext = a.nextSibling === b ? a : a.nextSibling;
-    parent.insertBefore(a, b);
-    parent.insertBefore(b, aNext);
-  }
-  // 2) ドロップゾーン挿入（builderへ）
-  else if (activeZone) {
-    // どこから来たかに関わらず、ドロップゾーンの位置へ挿入
-    const isFromBank = from === "bank";
-    el.setAttribute("data-origin", "builder");
-    builderEl.insertBefore(el, activeZone.nextSibling);
-  }
-  // 3) バンクへ戻す（builder→bank） or 何も起きない（bank→bankの空ドロップ）
-  else {
-    // 組み立て中のトークンを画面外にドロップしたらバンクへ戻す
-    if (from === "builder") {
-      el.setAttribute("data-origin", "bank");
-      bankEl.appendChild(el);
-    }
-  }
-
-  // クリーンアップ
-  el.classList.remove("dragging");
-  $$("#builder .token").forEach(t => t.classList.remove("dragging"));
-  $$(".dropzone").forEach(d => d.classList.remove("active"));
-  if (clone && clone.parentElement) clone.parentElement.removeChild(clone);
-  dragCtx = null;
-  window.removeEventListener("pointermove", onDragMove);
-  refreshDropzones();
-}
-
-// ダブルタップで builder→bank 戻す（誤配置の即修正用）
-function enableDoubleTapRemove(el) {
-  let last = 0;
-  el.addEventListener("pointerup", (e) => {
-    const now = Date.now();
-    if (now - last < 300) {
-      if (el.parentElement === builderEl) {
-        undoStack.push({ bank: bankTokens(), builder: builderTokens() });
-        el.setAttribute("data-origin", "bank");
-        bankEl.appendChild(el);
-        refreshDropzones();
-      }
-    }
-    last = now;
-  });
-}
-
-// ---------- スワイプ（左右で前/次） ----------
-(function enableSwipeNav(){
-  const panel = $("#builderPanel");
-  let startX = 0, startY = 0, moved = false;
-  panel.addEventListener("touchstart", (e)=>{
-    if (!e.touches.length) return;
-    startX = e.touches[0].clientX;
-    startY = e.touches[0].clientY;
-    moved = false;
-  }, {passive:true});
-  panel.addEventListener("touchmove", (e)=>{
-    moved = true;
-  }, {passive:true});
-  panel.addEventListener("touchend", (e)=>{
-    if (!moved) return;
-    const endX = (e.changedTouches[0]||{}).clientX || startX;
-    const endY = (e.changedTouches[0]||{}).clientY || startY;
-    const dx = endX - startX;
-    const dy = endY - startY;
-    if (Math.abs(dx) > 60 && Math.abs(dy) < 50) {
-      if (dx < 0) gotoNext(); else gotoPrev();
-    }
-  }, {passive:true});
-})();
-
-// ---------- イベント ----------
-btnCheck.addEventListener("click", checkAnswer);
-btnHint.addEventListener("click", showHint);
-btnReveal.addEventListener("click", toggleReveal);
-btnClear.addEventListener("click", clearBuilder);
-btnUndo.addEventListener("click", undo);
-btnPrev.addEventListener("click", gotoPrev);
-btnNext.addEventListener("click", gotoNext);
-
-// 履歴モーダル
-const historyModal = $("#historyModal");
-$("#btnHistory").addEventListener("click", ()=>{
-  renderHistory();
-  historyModal.classList.remove("hidden");
+// Tabs
+$$('nav.tabs button').forEach(btn => btn.onclick = () => {
+  $$('nav.tabs button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  const tab = btn.dataset.tab;
+  $$('main .tab').forEach(s=>s.hidden=true);
+  $('#tab-'+tab).hidden=false;
 });
-$("#closeHistory").addEventListener("click", ()=> historyModal.classList.add("hidden"));
-$("#historySearch").addEventListener("input", renderHistory);
 
-function renderHistory(){
-  const q = ($("#historySearch").value || "").toLowerCase();
-  const box = $("#historyList");
-  box.innerHTML = "";
-  const rows = [...HISTORY].reverse().filter(r => {
-    return r.jp.toLowerCase().includes(q) || r.en.toLowerCase().includes(q) || r.user.toLowerCase().includes(q);
+// Built-in CSV
+async function loadBuiltin(){
+  const txt = await fetch('./data/builtin.csv?'+Date.now()).then(r=>r.text());
+  const rows = txt.split(/\r?\n/).filter(l=>l.trim()).slice(1);
+  problems = rows.map((line,i)=>{
+    const m = line.split(/,(.+)/); const jp=(m[0]||'').trim(); const en=(m[1]||'').trim();
+    return { id:'builtin:'+i, jp, en };
   });
-  if (!rows.length){
-    box.innerHTML = "<div>履歴なし</div>";
-    return;
-  }
-  rows.forEach(r => {
-    const div = document.createElement("div");
-    div.className = "history-item";
-    const dt = new Date(r.ts);
-    div.innerHTML = `
-      <div class="jp">${r.jp}</div>
-      <div class="en">${r.en}</div>
-      <div>あなたの解答: ${r.user} ${r.correct ? "✅" : "❌"}</div>
-      ${r.hint? `<div>ヒント: ${r.hint}</div>`:""}
-      ${r.explain? `<div>解説: ${r.explain}</div>`:""}
-      <div style="font-size:12px;color:#666">${dt.toLocaleString()}</div>
-    `;
-    box.appendChild(div);
-  });
+  currentDeckId='builtin'; afterDataLoaded();
+}
+$('#addBuiltin').onclick = loadBuiltin;
+
+// CSV import
+$('#csvInput').addEventListener('change', async (e)=>{
+  const f=e.target.files[0]; if(!f) return;
+  const txt=await f.text(); const lines=txt.split(/\r?\n/).filter(l=>l.trim()); const rows=lines.slice(1);
+  problems = rows.map((line,i)=>{ const m=line.split(/,(.+)/); const jp=(m[0]||'').replace(/^"|"$/g,'').trim(); const en=(m[1]||'').replace(/^"|"$/g,'').trim(); return { id:'csv:'+i, jp, en}; }).filter(x=>x.en);
+  currentDeckId = 'csv:'+(f.name||'dataset'); afterDataLoaded();
+});
+
+function afterDataLoaded(){
+  renderProblems();
+  scheduler = new DeckScheduler({ items: problems, deckId: currentDeckId });
+  nav = new PracticeNavigator({ getNextItem: ()=>scheduler.next(), onRender: renderPractice, deckId: currentDeckId });
+  nav.start();
+  updateCounters(); showToast('問題を読み込みました');
+  switchTab('problems');
 }
 
-// インポート/エクスポート/リセット
-$("#fileInput").addEventListener("change", async (e)=>{
-  const file = e.target.files?.[0];
-  if (!file) return;
-  const text = await file.text();
-  let data = null;
-  if (file.name.endsWith(".json")){
-    data = JSON.parse(text);
-  } else if (file.name.endsWith(".csv")){
-    // 簡易CSV（カンマ区切り、引用符対応弱）
-    const lines = text.split(/\r?\n/).filter(Boolean);
-    const head = lines.shift().split(",").map(s=>s.trim());
-    const jpIdx = head.indexOf("jp");
-    const enIdx = head.indexOf("en");
-    const hintIdx = head.indexOf("hint");
-    const expIdx = head.indexOf("explain");
-    data = lines.map(line => {
-      const cols = line.split(","); // シンプル実装
-      return {
-        jp: cols[jpIdx] || "",
-        en: cols[enIdx] || "",
-        hint: hintIdx>=0 ? (cols[hintIdx]||"") : "",
-        explain: expIdx>=0 ? (cols[expIdx]||"") : ""
-      };
+// Problems
+function renderProblems(){
+  const q = ($('#searchProblems').value||'').toLowerCase(); const list=$('#problemsList'); list.innerHTML='';
+  problems.forEach((p,idx)=>{
+    if (q && !(p.jp+' '+p.en).toLowerCase().includes(q)) return;
+    const div=document.createElement('div'); div.className='item';
+    div.innerHTML = `<div><strong>${escapeHtml(p.jp)}</strong></div>
+      <div class="muted">${escapeHtml(p.en)}</div>
+      <div class="row">
+        <button class="btn" data-play="${idx}">読み上げ</button>
+        <button class="btn pri" data-practice="${idx}">この問題で練習</button>
+      </div>`;
+    list.appendChild(div);
+  });
+}
+$('#searchProblems').addEventListener('input', renderProblems);
+$('#problemsList').addEventListener('click', (e)=>{
+  const play=e.target.closest('[data-play]'); const go=e.target.closest('[data-practice]');
+  if (play){ const idx=+play.dataset.play; speakPair(problems[idx]); }
+  else if (go){ const idx=+go.dataset.practice; nav.clear(); nav.history.push({ item: problems[idx], meta:{ index:idx } }); nav.pos=nav.history.length-1; nav._save(); nav._renderCurrent(); switchTab('practice'); smoothScrollInto($('#practice-root')); }
+});
+$('#playAllProblems').onclick = async ()=>{
+  const items = problems.slice(); const auto=$('#autoPlayProblems').checked;
+  for (const it of items){ await speakPair(it); if (!auto) break; await sleep(settings.delayNext*1000); }
+};
+
+// ---------- Practice (Drag&Drop insert/reorder) ----------
+function shuffleTokens(en){
+  const tokens=en.split(/\s+/).filter(Boolean);
+  const a=tokens.slice();
+  for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]];}
+  return {tokens, shuffled:a};
+}
+
+function renderPractice(item){
+  current=item; $('#jpText').textContent=item.jp||'';
+  const { shuffled } = shuffleTokens(item.en);
+  const container=$('#tokens'); container.innerHTML='';
+
+  const pool=document.createElement('div'); pool.id='tokenPool';
+  pool.style.display='flex'; pool.style.flexWrap='wrap'; pool.style.gap='8px';
+
+  const line=document.createElement('div'); line.id='answerLine'; line.className='sentence';
+  line.style.minHeight='44px'; line.style.padding='8px'; line.style.border='1px dashed #ccc'; line.style.borderRadius='8px'; line.style.marginTop='10px'; line.style.display='flex'; line.style.flexWrap='wrap'; line.style.gap='8px';
+
+  container.appendChild(pool); container.appendChild(line);
+  shuffled.forEach(tk=> pool.appendChild(makeChip(tk, 'pool')) );
+  enableDnD(pool, line);
+
+  $('#answerCard').style.display='none'; updateCounters();
+}
+
+function makeChip(text, place){
+  const b=document.createElement('button');
+  b.className='btn'; b.textContent=text; b.dataset.token=text; b.dataset.place=place;
+  b.style.touchAction='none';
+  b.addEventListener('click', (e)=>{
+    if (b.dataset.place==='pool'){
+      const line=$('#answerLine'); line.appendChild(b); b.dataset.place='line'; updateAnswerPreview();
+    } else if (b.dataset.place==='line'){
+      const pool=$('#tokenPool'); pool.appendChild(b); b.dataset.place='pool'; updateAnswerPreview();
+    }
+  });
+  return b;
+}
+
+function currentUserAnswer(){
+  return Array.from($('#answerLine').children).map(el=>el.dataset.token).join(' ');
+}
+function updateAnswerPreview(){}
+
+function enableDnD(pool, line){
+  let dragging=null, origin=null, placeholder=null, offsetX=0, offsetY=0;
+
+  function onPointerDown(e){
+    const t=e.target.closest('button.btn'); if(!t) return;
+    e.preventDefault();
+    dragging=t; origin=t.dataset.place;
+    const rect=t.getBoundingClientRect();
+    offsetX=e.clientX-rect.left; offsetY=e.clientY-rect.top;
+    t.classList.add('dragging');
+    t.style.position='fixed'; t.style.zIndex='9999'; t.style.pointerEvents='none';
+    t.style.left=rect.left+'px'; t.style.top=rect.top+'px'; t.style.width=rect.width+'px';
+
+    placeholder=document.createElement('span');
+    placeholder.className='btn'; placeholder.style.minWidth=rect.width+'px';
+    placeholder.style.minHeight=rect.height+'px';
+    placeholder.style.border='1px dashed #999'; placeholder.style.opacity='0.6';
+
+    if (origin==='line'){ line.insertBefore(placeholder, t.nextSibling); }
+
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', onPointerUp);
+  }
+
+  function onPointerMove(e){
+    if(!dragging) return; e.preventDefault();
+    dragging.style.left=(e.clientX-offsetX)+'px';
+    dragging.style.top=(e.clientY-offsetY)+'px';
+    const overLine = isOver(e, line); const overPool = isOver(e, pool);
+
+    if (overLine){
+      if (!placeholder.isConnected || placeholder.parentElement!==line){ placeholder.remove(); line.appendChild(placeholder); }
+      const children = Array.from(line.children).filter(c=>c!==dragging);
+      let placed=false;
+      for (const child of children){
+        const r=child.getBoundingClientRect(); const mid=r.left + r.width/2;
+        if (e.clientX < mid){ line.insertBefore(placeholder, child); placed=true; break; }
+      }
+      if (!placed) line.appendChild(placeholder);
+    } else if (overPool){
+      if (placeholder.isConnected && placeholder.parentElement===line){ placeholder.remove(); }
+    }
+  }
+
+  function onPointerUp(e){
+    if(!dragging) return;
+    window.removeEventListener('pointermove', onPointerMove);
+    window.removeEventListener('pointerup', onPointerUp);
+
+    dragging.classList.remove('dragging');
+    dragging.style.position=''; dragging.style.zIndex=''; dragging.style.pointerEvents='';
+    dragging.style.left=''; dragging.style.top=''; dragging.style.width='';
+
+    const overLine = isOver(e, line);
+    const overPool = isOver(e, pool);
+
+    if (overLine){
+      if (!placeholder) line.appendChild(dragging);
+      else line.insertBefore(dragging, placeholder);
+      dragging.dataset.place='line';
+    } else if (overPool){
+      pool.appendChild(dragging);
+      dragging.dataset.place='pool';
+    } else {
+      (origin==='line' ? line : pool).appendChild(dragging);
+      dragging.dataset.place=origin;
+    }
+
+    if (placeholder){ placeholder.remove(); placeholder=null; }
+    dragging=null; origin=null;
+    updateAnswerPreview();
+  }
+
+  function isOver(e, el){
+    const r=el.getBoundingClientRect();
+    return e.clientX>=r.left && e.clientX<=r.right && e.clientY>=r.top && e.clientY<=r.bottom;
+  }
+
+  pool.addEventListener('pointerdown', onPointerDown);
+  line.addEventListener('pointerdown', onPointerDown);
+}
+
+// Check / Reveal / Speak / Explain
+$('#checkBtn').onclick = ()=>{
+  const ans=normalizeEN(current.en); const user=normalizeEN(currentUserAnswer());
+  const ok = ans===user; $('#answerCard').style.display='block'; $('#answer').textContent=current.en; $('#answerCard').scrollIntoView({behavior:'smooth', block:'center'});
+  pushHistory({ ...current, correct: ok, user }); showToast(ok?'正解！':'もう一度');
+};
+$('#revealBtn').onclick = ()=>{ $('#answerCard').style.display='block'; $('#answer').textContent=current.en; };
+$('#speakJP').onclick = ()=> speakText(current.jp, 'ja');
+$('#speakEN').onclick = ()=> speakText(current.en, 'en');
+$('#explainBtn').onclick = async ()=>{
+  settings.model = $('#modelSel') ? $('#modelSel').value : settings.model;
+  try{ $('#explainBtn').disabled=true; const text = await getExplanation({ jp: current.jp, en: current.en, model: settings.model });
+    $('#answerCard').style.display='block'; $('#answer').textContent=current.en; $('#explain').textContent=text;
+  }catch(e){ alert('解説の取得に失敗: '+e.message); } finally{ $('#explainBtn').disabled=false; }
+};
+$('#nextBtn').onclick = ()=> nav.next();
+$('#prevBtn').onclick = ()=> nav.prev();
+initSwipeNavigation({ container: $('#practice-root'), onSwipeLeft: ()=>nav.next(), onSwipeRight: ()=>nav.prev() });
+
+// History
+let historyArr = JSON.parse(localStorage.getItem('history')||'[]');
+function pushHistory(entry){ entry.ts=Date.now(); historyArr.unshift(entry); if(historyArr.length>1000) historyArr.pop(); localStorage.setItem('history', JSON.stringify(historyArr)); renderHistory(); }
+function renderHistory(){
+  const q = ($('#searchHistory').value||'').toLowerCase(); const list=$('#historyList'); list.innerHTML='';
+  historyArr.forEach((h,idx)=>{
+    if (q && !((h.jp||'')+' '+(h.en||'')+' '+(h.user||'')).toLowerCase().includes(q)) return;
+    const div=document.createElement('div'); div.className='item'; const date=new Date(h.ts).toLocaleString();
+    div.innerHTML = `<div><strong>${escapeHtml(h.jp||'')}</strong></div>
+      <div class="muted">${escapeHtml(h.en||'')}</div>
+      <div class="meta">${h.correct?'◯':'×'} ／ ${date}</div>
+      <div class="row">
+        <button class="btn" data-replay="${idx}">読み上げ</button>
+        <button class="btn pri" data-again="${idx}">この問題で練習</button>
+      </div>`;
+    list.appendChild(div);
+  });
+}
+$('#searchHistory').addEventListener('input', renderHistory);
+$('#historyList').addEventListener('click', (e)=>{
+  const replay=e.target.closest('[data-replay]'); const again=e.target.closest('[data-again]');
+  if (replay){ const idx=+replay.dataset.replay; speakPair(historyArr[idx]); }
+  else if (again){ const idx=+again.dataset.again; nav.clear(); nav.history.push({ item: historyArr[idx], meta:{from:'history'} }); nav.pos=nav.history.length-1; nav._save(); nav._renderCurrent(); switchTab('practice'); smoothScrollInto($('#practice-root')); }
+});
+$('#clearHistory').onclick = ()=>{ if(confirm('履歴をすべて削除しますか？')){ historyArr=[]; localStorage.setItem('history','[]'); renderHistory(); } };
+
+// Settings
+$('#saveKey').onclick = ()=>{ const v=($('#apiKey').value||'').trim(); if(!/^sk-/.test(v)) { alert('sk- から始まるキーを入力'); return; } localStorage.setItem('openai_api_key', v); showToast('APIキーを保存しました'); $('#apiKey').value=''; };
+$('#testExplain').onclick = async ()=>{ try{ const t=await getExplanation({ jp:'舌部分切除後、RFFFで再建した。', en:'We inset a radial forearm free flap after partial glossectomy.', model: settings.model }); alert('OK\n\n'+t); }catch(e){ alert('NG: '+e.message); } };
+function loadVoices(){ voices=window.speechSynthesis.getVoices(); populateVoiceSelects(); }
+function populateVoiceSelects(){ const jpSel=$('#jpVoice'), enSel=$('#enVoice'); jpSel.innerHTML=''; enSel.innerHTML='';
+  voices.forEach(v=>{ const opt=document.createElement('option'); opt.value=v.name; opt.textContent=`${v.name} (${v.lang})`; if(v.lang.startsWith('ja')) jpSel.appendChild(opt.cloneNode(true)); if(v.lang.startsWith('en')) enSel.appendChild(opt); });
+  if(!settings.jpVoice){ const v=voices.find(v=>v.lang.startsWith('ja')); if(v) settings.jpVoice=v.name; }
+  if(!settings.enVoice){ const v=voices.find(v=>v.lang.startsWith('en-US')) || voices.find(v=>v.lang.startsWith('en')); if(v) settings.enVoice=v.name; }
+  jpSel.value=settings.jpVoice||''; enSel.value=settings.enVoice||'';
+}
+window.speechSynthesis.onvoiceschanged=loadVoices; setTimeout(loadVoices, 300);
+$('#jpVoice').onchange = (e)=> settings.jpVoice = e.target.value;
+$('#enVoice').onchange = (e)=> settings.enVoice = e.target.value;
+$('#delayJPEN').onchange = (e)=> settings.delayJPEN = clamp(+e.target.value, 0.5, 10);
+$('#delayNext').onchange = (e)=> settings.delayNext = clamp(+e.target.value, 0.5, 10);
+$('#repeatCount').onchange = (e)=> settings.repeatCount = clamp(Math.round(+e.target.value), 1, 10);
+$('#volume').onchange = (e)=> settings.volume = clamp(+e.target.value, 0, 1);
+async function speakPair(it){ await speakText(it.jp,'ja'); await sleep(settings.delayJPEN*1000); await speakText(it.en,'en'); }
+async function speakText(text, lang){
+  if(!text) return;
+  for(let k=0;k<settings.repeatCount;k++){
+    await new Promise((resolve)=>{
+      const u=new SpeechSynthesisUtterance(text);
+      const lst=window.speechSynthesis.getVoices();
+      const vname=(lang==='ja')?settings.jpVoice:settings.enVoice;
+      const v=lst.find(x=>x.name===vname) || lst.find(x=>x.lang.startsWith(lang));
+      if (v) u.voice=v; u.lang=v? v.lang : (lang==='ja'?'ja-JP':'en-US'); u.rate=1.0; u.pitch=1.0; u.volume=settings.volume;
+      u.onend=()=>resolve(); u.onerror=()=>resolve(); try{ window.speechSynthesis.speak(u); }catch{ resolve(); }
     });
   }
-  if (!Array.isArray(data) || !data.length) {
-    alert("読み込み失敗: フォーマットを確認してください。");
-    return;
-  }
-  DATA = data;
-  localStorage.setItem(LS_DATA, JSON.stringify(DATA));
-  // キュー更新
-  QUEUE = [];
-  IDX = 0;
-  localStorage.setItem(LS_QUEUE, JSON.stringify(QUEUE));
-  localStorage.setItem(LS_IDX, "0");
-  loadCurrent();
-  alert(`読み込み完了: ${DATA.length}問`);
-});
+}
+$('#playPracticeAuto').onclick = async ()=>{ if(!current) return; await speakPair(current); };
 
-$("#btnExport").addEventListener("click", ()=>{
-  const blob = new Blob([JSON.stringify(HISTORY, null, 2)], {type: "application/json"});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "history-export.json";
-  a.click();
-  URL.revokeObjectURL(url);
-});
+function updateCounters(){ if(!scheduler) return; const s=scheduler.state; $('#deckInfo').textContent=currentDeckId; $('#roundInfo').textContent='Round '+s.round; $('#remainInfo').textContent='残り '+scheduler.remaining(); }
+function switchTab(name){ $$('nav.tabs button').forEach(b=>b.classList.remove('active')); $$('main .tab').forEach(s=>s.hidden=true); $('nav.tabs button[data-tab="'+name+'"]').classList.add('active'); $('#tab-'+name).hidden=false; }
 
-$("#btnResetHistory").addEventListener("click", ()=>{
-  if (confirm("学習履歴を削除しますか？")) {
-    HISTORY = [];
-    localStorage.setItem(LS_HISTORY, "[]");
-    renderHistory();
-  }
-});
-
-// 初期化
-loadCurrent();
+// History init & initial data
+renderHistory(); loadBuiltin();
