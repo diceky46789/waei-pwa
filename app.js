@@ -98,57 +98,8 @@ const AudioTTS={audio:null,ctx:null,source:null,gainNode:null,ensureAudio(){if(!
 const TTS={cancel(){WebSpeechTTS.cancel();AudioTTS.stop()},wait(ms){return new Promise(r=>setTimeout(r,ms))},async speak(text,lang){if(Store.ttsMode==="audio"){AudioTTS.setBaseVolume(Store.baseVolume);await AudioTTS.playOnce(lang,text)}else{await WebSpeechTTS.speak(text,lang)}},async seqOnce(jp,en){if(Store.ttsMode==="audio"){AudioTTS.setBaseVolume(Store.baseVolume);await AudioTTS.playOnce("ja-JP",jp);await this.wait(Store.delayJPEN*1000);await AudioTTS.playOnce("en-US",en)}else{await WebSpeechTTS.speak(jp,"ja-JP");await this.wait(Store.delayJPEN*1000);await WebSpeechTTS.speak(en,"en-US")}},async seqRepeat(jp,en,repeat){repeat=Math.max(1,Math.min(10,repeat|0));for(let i=0;i<repeat;i++){await this.seqOnce(jp,en);if(i<repeat-1)await this.wait(Store.delayNextJP*1000)}}};
 
 // --- Practice ---
-const Practice={current:null,pool:[],answer:[],pickRandom(){const arr=Store.problems;if(!arr||!arr.length){UI.showNoProblems();return}this.current=arr[Math.floor(Math.random()*arr.length)];UI.setJP(this.current.jp);this.resetTokens();UI.clearResult()},setProblemById(id){const p=(Store.problems||[]).find(x=>x.id===id);if(!p)return;this.current=p;UI.setJP(p.jp);this.resetTokens();UI.clearResult();UI.switchTab("practice")},resetTokens(){this.pool=TOKENS.tokenize(this.current.en).sort(()=>Math.random()-0.5);this.answer=[];UI.renderPool(this.pool);UI.renderAnswer(this.answer)},undo(){if(this.answer.length){const t=this.answer.pop();this.pool.push(t);UI.renderPool(this.pool);UI.renderAnswer(this.answer)}},shuffle(){this.pool=this.pool.sort(()=>Math.random()-0.5);UI.renderPool(this.pool)},tapPool(i){const [t]=this.pool.splice(i,1);this.answer.push(t);UI.renderPool(this.pool);UI.renderAnswer(this.answer)},tapAnswer(i){const [t]=this.answer.splice(i,1);this.pool.push(t);UI.renderPool(this.pool);UI.renderAnswer(this.answer)},check(){const ans=TOKENS.detokenize(this.answer);const ok=TOKENS.normalized(ans)===TOKENS.normalized(this.current.en);const rec={id:crypto.randomUUID(),problemID:this.current.id,timestamp:Date.now(),userAnswer:ans,correct:ok};Store.history=[rec,...(Store.history||[])];UI.showResult(ok,this.current.en);UI.refreshHistory();this.explain(ans,ok);if(ok&&document.getElementById("autoplayChk").checked){this.pickRandom()}},async explain(userEN,ok){UI.showExplaining(true);const key=Store.apiKey;if(!key){UI.setExplanation("（APIキー未設定のため、解説自動生成はスキップ）");UI.showExplaining(false);return}try{const prompt=`あなたは英語学習者向けに、語順の理由を日本語でわかりやすく解説する先生です。\\n日本文: ${this.current.jp}\\n正解の英語: ${this.current.en}\\nユーザーの英語: ${userEN}`;const resp=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:{"Authorization":`Bearer ${key}`,"Content-Type":"application/json"},body:JSON.stringify({model:"gpt-4.1-mini",input:[{role:"user",content:prompt}],temperature:0.2})});if(!resp.ok)throw new Error(await resp.text());const data=await resp.json();let text="";if(data?.output?.content)text=data.output.content.map(c=>c.text||"").join("\\n").trim();else if(data?.choices?.[0]?.message?.content)text=data.choices[0].message.content;UI.setExplanation(text||"（解説なし）")}catch(e){UI.setExplanation("解説の取得に失敗しました: "+e.message)}finally{UI.showExplaining(false)}}}
-/* --- Prev navigation (single clean block) --- */
-(function(){
-  function updatePrevBtn(){
-    const b = document.getElementById("prevBtn");
-    if (b) b.disabled = !(Practice.navBack && Practice.navBack.length);
-  }
-  Practice.navBack = Practice.navBack || [];
+const Practice={current:null,pool:[],answer:[],pickRandom(){const arr=Store.problems;if(!arr||!arr.length){UI.showNoProblems();return}this.current=arr[Math.floor(Math.random()*arr.length)];UI.setJP(this.current.jp);this.resetTokens();UI.clearResult()},setProblemById(id){const p=(Store.problems||[]).find(x=>x.id===id);if(!p)return;this.current=p;UI.setJP(p.jp);this.resetTokens();UI.clearResult();UI.switchTab("practice")},resetTokens(){this.pool=TOKENS.tokenize(this.current.en).sort(()=>Math.random()-0.5);this.answer=[];UI.renderPool(this.pool);UI.renderAnswer(this.answer)},undo(){if(this.answer.length){const t=this.answer.pop();this.pool.push(t);UI.renderPool(this.pool);UI.renderAnswer(this.answer)}},shuffle(){this.pool=this.pool.sort(()=>Math.random()-0.5);UI.renderPool(this.pool)},tapPool(i){const [t]=this.pool.splice(i,1);this.answer.push(t);UI.renderPool(this.pool);UI.renderAnswer(this.answer)},tapAnswer(i){const [t]=this.answer.splice(i,1);this.pool.push(t);UI.renderPool(this.pool);UI.renderAnswer(this.answer)},check(){const ans=TOKENS.detokenize(this.answer);const ok=TOKENS.normalized(ans)===TOKENS.normalized(this.current.en);const rec={id:crypto.randomUUID(),problemID:this.current.id,timestamp:Date.now(),userAnswer:ans,correct:ok};Store.history=[rec,...(Store.history||[])];UI.showResult(ok,this.current.en);UI.refreshHistory();this.explain(ans,ok);if(ok&&document.getElementById("autoplayChk").checked){this.pickRandom()}},async explain(userEN,ok){UI.showExplaining(true);const key=Store.apiKey;if(!key){UI.setExplanation("（APIキー未設定のため、解説自動生成はスキップ）");UI.showExplaining(false);return}try{const prompt=`あなたは英語学習者向けに、語順の理由を日本語でわかりやすく解説する先生です。\\n日本文: ${this.current.jp}\\n正解の英語: ${this.current.en}\\nユーザーの英語: ${userEN}`;const resp=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:{"Authorization":`Bearer ${key}`,"Content-Type":"application/json"},body:JSON.stringify({model:"gpt-4.1-mini",input:[{role:"user",content:prompt}],temperature:0.2})});if(!resp.ok)throw new Error(await resp.text());const data=await resp.json();let text="";if(data?.output?.content)text=data.output.content.map(c=>c.text||"").join("\\n").trim();else if(data?.choices?.[0]?.message?.content)text=data.choices[0].message.content;UI.setExplanation(text||"（解説なし）")}catch(e){UI.setExplanation("解説の取得に失敗しました: "+e.message)}finally{UI.showExplaining(false)}}};
 
-  if (!Practice._pickRandomOriginal_forPrev){
-    Practice._pickRandomOriginal_forPrev = Practice.pickRandom.bind(Practice);
-    Practice.pickRandom = function(){
-      if (this.current && this.current.id) { this.navBack.push(this.current.id); }
-      const r = this._pickRandomOriginal_forPrev();
-      updatePrevBtn();
-      return r;
-    };
-  }
-
-  if (Practice.setProblemById && !Practice._setProblemByIdOriginal_forPrev){
-    Practice._setProblemByIdOriginal_forPrev = Practice.setProblemById.bind(Practice);
-    Practice.setProblemById = function(id){
-      if (this.current && this.current.id) { this.navBack.push(this.current.id); }
-      const r = this._setProblemByIdOriginal_forPrev(id);
-      updatePrevBtn();
-      return r;
-    };
-  }
-
-  Practice.prev = function(){
-    while (this.navBack && this.navBack.length){
-      const id = this.navBack.pop();
-      const arr = (Store.problems || []);
-      const p = arr.find(x => x.id === id) || null;
-      if (p){
-        this.current = p;
-        UI.setJP(p.jp);
-        this.resetTokens();
-        UI.clearResult();
-        updatePrevBtn();
-        return;
-      }
-    }
-    updatePrevBtn();
-    alert("前に表示した問題はありません");
-  };
-
-  // initialize button state on DOM ready
-  window.addEventListener("DOMContentLoaded", updatePrevBtn);
-})();
-/* --- end prev navigation (single clean block) --- */
 // --- List auto player (unchanged) ---
 const ListAuto={abort:false,stop(){this.abort=true;TTS.cancel();UI.clearPlaying()},async playItemsJPEN(items,container){this.abort=false;for(const it of items){if(this.abort)break;UI.setPlaying(container,it.id);const{jp,en}=it;if(!jp||!en)continue;await TTS.seqRepeat(jp,en,Store.repeatCount);if(this.abort)break;await TTS.wait(Store.delayNextJP*1000)}UI.clearPlaying()}};
 
@@ -208,7 +159,6 @@ const UI={els:{},lastProblems:[],lastHistory:[],_playingEl:null,
     document.getElementById("resetBtn").onclick=()=>Practice.resetTokens();
     document.getElementById("shuffleBtn").onclick=()=>Practice.shuffle();
     document.getElementById("checkBtn").onclick=()=>Practice.check();
-    document.getElementById("prevBtn").onclick=()=>Practice.prev();
     document.getElementById("nextBtn").onclick=()=>Practice.pickRandom();
     document.getElementById("speakJPBtn").onclick=async()=>{ListAuto.stop();await TTS.speak(Practice.current.jp,"ja-JP")};
     document.getElementById("speakENBtn").onclick=async()=>{ListAuto.stop();await TTS.speak(Practice.current.en,"en-US")};
@@ -298,24 +248,7 @@ const UI={els:{},lastProblems:[],lastHistory:[],_playingEl:null,
     if(window.matchMedia('(display-mode: standalone)').matches){ ih.classList.add("hidden") }
     else { ih.classList.remove("hidden"); ih.onclick=()=>alert("Safariの共有→『ホーム画面に追加』") }
 
-    if("serviceWorker" in navigator){
-      const SW_VERSION="3.4.2";
-      window.addEventListener("load", async()=>{
-        try{
-          const reg = await navigator.serviceWorker.register("sw.js?v="+SW_VERSION);
-          // Try to get latest immediately
-          reg.update();
-          // When a new SW is waiting, tell it to skip waiting
-          if (reg.waiting) reg.waiting.postMessage({type:"SKIP_WAITING"});
-          // If a new controller takes over, reload to use fresh files
-          navigator.serviceWorker.addEventListener("controllerchange", ()=>location.reload());
-          // Also check for updates whenever tab becomes visible
-          document.addEventListener("visibilitychange", ()=>{
-            if(document.visibilityState==="visible") reg.update();
-          });
-        }catch(e){ console.warn("SW register failed:", e); }
-      });
-    }
+    if("serviceWorker" in navigator){ window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js")) }
 
     // kick
     Store.load();
