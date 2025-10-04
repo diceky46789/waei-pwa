@@ -298,7 +298,24 @@ const UI={els:{},lastProblems:[],lastHistory:[],_playingEl:null,
     if(window.matchMedia('(display-mode: standalone)').matches){ ih.classList.add("hidden") }
     else { ih.classList.remove("hidden"); ih.onclick=()=>alert("Safariの共有→『ホーム画面に追加』") }
 
-    if("serviceWorker" in navigator){ window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js")) }
+    if("serviceWorker" in navigator){
+      const SW_VERSION="3.4.2";
+      window.addEventListener("load", async()=>{
+        try{
+          const reg = await navigator.serviceWorker.register("sw.js?v="+SW_VERSION);
+          // Try to get latest immediately
+          reg.update();
+          // When a new SW is waiting, tell it to skip waiting
+          if (reg.waiting) reg.waiting.postMessage({type:"SKIP_WAITING"});
+          // If a new controller takes over, reload to use fresh files
+          navigator.serviceWorker.addEventListener("controllerchange", ()=>location.reload());
+          // Also check for updates whenever tab becomes visible
+          document.addEventListener("visibilitychange", ()=>{
+            if(document.visibilityState==="visible") reg.update();
+          });
+        }catch(e){ console.warn("SW register failed:", e); }
+      });
+    }
 
     // kick
     Store.load();
