@@ -100,6 +100,68 @@ const TTS={cancel(){WebSpeechTTS.cancel();AudioTTS.stop()},wait(ms){return new P
 // --- Practice ---
 const Practice={current:null,pool:[],answer:[],pickRandom(){const arr=Store.problems;if(!arr||!arr.length){UI.showNoProblems();return}this.current=arr[Math.floor(Math.random()*arr.length)];UI.setJP(this.current.jp);this.resetTokens();UI.clearResult()},setProblemById(id){const p=(Store.problems||[]).find(x=>x.id===id);if(!p)return;this.current=p;UI.setJP(p.jp);this.resetTokens();UI.clearResult();UI.switchTab("practice")},resetTokens(){this.pool=TOKENS.tokenize(this.current.en).sort(()=>Math.random()-0.5);this.answer=[];UI.renderPool(this.pool);UI.renderAnswer(this.answer)},undo(){if(this.answer.length){const t=this.answer.pop();this.pool.push(t);UI.renderPool(this.pool);UI.renderAnswer(this.answer)}},shuffle(){this.pool=this.pool.sort(()=>Math.random()-0.5);UI.renderPool(this.pool)},tapPool(i){const [t]=this.pool.splice(i,1);this.answer.push(t);UI.renderPool(this.pool);UI.renderAnswer(this.answer)},tapAnswer(i){const [t]=this.answer.splice(i,1);this.pool.push(t);UI.renderPool(this.pool);UI.renderAnswer(this.answer)},check(){const ans=TOKENS.detokenize(this.answer);const ok=TOKENS.normalized(ans)===TOKENS.normalized(this.current.en);const rec={id:crypto.randomUUID(),problemID:this.current.id,timestamp:Date.now(),userAnswer:ans,correct:ok};Store.history=[rec,...(Store.history||[])];UI.showResult(ok,this.current.en);UI.refreshHistory();this.explain(ans,ok);if(ok&&document.getElementById("autoplayChk").checked){this.pickRandom()}},async explain(userEN,ok){UI.showExplaining(true);const key=Store.apiKey;if(!key){UI.setExplanation("（APIキー未設定のため、解説自動生成はスキップ）");UI.showExplaining(false);return}try{const prompt=`あなたは英語学習者向けに、語順の理由を日本語でわかりやすく解説する先生です。\\n日本文: ${this.current.jp}\\n正解の英語: ${this.current.en}\\nユーザーの英語: ${userEN}`;const resp=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:{"Authorization":`Bearer ${key}`,"Content-Type":"application/json"},body:JSON.stringify({model:"gpt-4.1-mini",input:[{role:"user",content:prompt}],temperature:0.2})});if(!resp.ok)throw new Error(await resp.text());const data=await resp.json();let text="";if(data?.output?.content)text=data.output.content.map(c=>c.text||"").join("\\n").trim();else if(data?.choices?.[0]?.message?.content)text=data.choices[0].message.content;UI.setExplanation(text||"（解説なし）")}catch(e){UI.setExplanation("解説の取得に失敗しました: "+e.message)}finally{UI.showExplaining(false)}}}
 /* --- Prev navigation (added) --- */
+// (superseded by improved block below)
+
+/* --- Prev navigation (improved) --- */
+(function(){
+  function updatePrevBtn(){
+    const b = document.getElementById("prevBtn");
+    if (b) b.disabled = !(Practice.navBack && Practice.navBack.length);
+  }
+  Practice.navBack = Practice.navBack || [];
+  // wrap pickRandom (already wrapped once in older patch; guard duplicate)
+  if (!Practice._pickRandomOriginal2){
+    Practice._pickRandomOriginal2 = Practice.pickRandom.bind(Practice);
+    Practice.pickRandom = function(){
+      if (this.current && this.current.id) { this.navBack.push(this.current.id); }
+      const r = this._pickRandomOriginal2();
+      updatePrevBtn();
+      return r;
+    };
+  }
+  // also wrap setProblemById if it exists (opening from lists/history)
+  if (Practice.setProblemById && !Practice._setProblemByIdOriginal){
+    Practice._setProblemByIdOriginal = Practice.setProblemById.bind(Practice);
+    Practice.setProblemById = function(id){
+      if (this.current && this.current.id) { this.navBack.push(this.current.id); }
+      const r = this._setProblemByIdOriginal(id);
+      updatePrevBtn();
+      return r;
+    };
+  }
+  // prev()
+  Practice.prev = function(){
+    while (this.navBack && this.navBack.length){
+      const id = this.navBack.pop();
+      const arr = (Store.problems || []);
+      const p = arr.find(x => x.id === id) || null;
+      if (p){
+        this.current = p;
+        UI.setJP(p.jp);
+        this.resetTokens();
+        UI.clearResult();
+        updatePrevBtn();
+        return;
+      }
+    }
+    updatePrevBtn();
+    alert("前に表示した問題はありません");
+  };
+  // clear on dataset switch
+  if (!Store._switchCollectionOriginal){
+    Store._switchCollectionOriginal = Store.switchCollection.bind(Store);
+    Store.switchCollection = function(name){
+      const ok = Store._switchCollectionOriginal(name);
+      Practice.navBack = [];
+      updatePrevBtn();
+      return ok;
+    }
+  }
+  // initialize button state on DOM ready
+  window.addEventListener("DOMContentLoaded", updatePrevBtn);
+})(); 
+/* --- end prev navigation (improved) --- */
+// (superseded by improved block below)
 Practice.navBack = [];
 Practice._pickRandomOriginal = Practice.pickRandom.bind(Practice);
 Practice.pickRandom = function(){
