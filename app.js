@@ -178,7 +178,7 @@ const UI={els:{},lastProblems:[],lastHistory:[],_playingEl:null,
       try{
         const rows=CSV.parse(text),h=rows[0];
         const ji=h.indexOf("jp"),ei=h.indexOf("en");
-        if(ji<0||ei<0) throw new Error("CSVヘッダーに jp,en が必要です"); const xi=(()=>{const ks=["explanation","explain","ex","解説"];for(let k of ks){const i=h.indexOf(k);if(i>=0)return i}return -1})();
+        if(ji<0||ei<0) throw new Error("CSVヘッダーに jp,en が必要です");
         let added=0;
         const exists=new Set((Store.problems||[]).map(p=>TOKENS.normalized(p.en)));
         const arr=Store.problems||[];
@@ -186,7 +186,7 @@ const UI={els:{},lastProblems:[],lastHistory:[],_playingEl:null,
           const c=rows[i]; const jp=(c[ji]||"").trim(), en=(c[ei]||"").trim();
           if(!jp||!en) continue;
           if(exists.has(TOKENS.normalized(en))) continue;
-          arr.push({id:crypto.randomUUID(), jp, en, ...(xi>=0&&((c[xi]||"").trim())?{ex:(c[xi]||"").trim()}:{})});
+          arr.push({id:crypto.randomUUID(), jp, en});
           exists.add(TOKENS.normalized(en)); added++;
         }
         Store.problems=arr;
@@ -332,103 +332,61 @@ const UI={els:{},lastProblems:[],lastHistory:[],_playingEl:null,
 
 window.addEventListener("DOMContentLoaded",()=>UI.init());
 
-// --- CSV Explanation Addon (auto-injected) ---
-;(function(){
-  try{
-    if (Practice && typeof Practice.check === 'function' && !Practice.__exPatched){
-      const orig = Practice.check.bind(Practice);
-      Practice.check = function(){
-        const beforeCur = this.current;
-        const res = orig();
-        const cur = this.current || beforeCur;
-        if (cur && (cur.ex || cur.explanation)){
-          UI.setExplanation(cur.ex || cur.explanation);
-        }
-        return res;
-      };
-      Practice.__exPatched = true;
-    }
-  }catch(e){ console.warn('CSV Explanation Addon patch failed:', e); }
-})();
 
-
-// === Hide-Problem Addon (no-UI-change, dynamic injection) ===
+// === Prev Button Addon (no-UI-change, dynamic injection) ===
 ;(() => {
-  const KEY = 'hiddenProblemIdsV1';
-  const loadHidden = () => {
-    try { return new Set(JSON.parse(localStorage.getItem(KEY) || '[]')); }
-    catch { return new Set(); }
-  };
-  const saveHidden = (set) => {
-    try { localStorage.setItem(KEY, JSON.stringify([...set])); } catch(e){}
-  };
-  const hidden = loadHidden();
+  // Keep an in-memory sequence of visited problem IDs
+  const seq = [];
+  // 1) Wrap setProblemById to track navigation
+  if (typeof Practice !== 'undefined' && typeof Practice.setProblemById === 'function' && !Practice.__prevPatched) {
+    const origSet = Practice.setProblemById.bind(Practice);
+    Practice.setProblemById = function(id){
+      // record current before switching
+      try {
+        if (this.current && this.current.id) {
+          const last = seq[seq.length-1];
+          if (last !== this.current.id) seq.push(this.current.id);
+        }
+      } catch(e){/*noop*/}
+      return origSet(id);
+    };
+    // Provide a goPrev method without altering other specs
+    Practice.goPrev = function(){
+      // Pop until we find an id different from current
+      try{
+        let targetId = null;
+        // ensure current is not reselected
+        const curId = (this.current && this.current.id) ? this.current.id : null;
+        while (seq.length){
+          const candidate = seq.pop();
+          if (candidate && candidate !== curId){ targetId = candidate; break; }
+        }
+        if (targetId && this.setProblemById) this.setProblemById(targetId);
+      }catch(e){/*noop*/}
+    };
+    Practice.__prevPatched = true;
+  }
 
-  // 1) Inject button near CHECK, without changing existing HTML
-  const injectButton = () => {
-    const check = document.getElementById('checkBtn');
-    if (!check || document.getElementById('hideBtn')) return;
+  // 2) Inject a "前へ" button just to the left of existing nextBtn
+  const injectPrev = () => {
+    const next = document.getElementById('nextBtn');
+    if (!next || document.getElementById('prevInjectedBtn')) return;
     const btn = document.createElement('button');
-    btn.id = 'hideBtn';
-    btn.textContent = '次から表示させない';
-    // Copy classes from CHECK for consistent look
-    btn.className = check.className || '';
-    btn.style.marginLeft = '6px';
+    btn.id = 'prevInjectedBtn';
+    btn.textContent = '前へ';
+    btn.className = next.className || ''; // match style
+    btn.style.marginRight = '6px';
     btn.addEventListener('click', () => {
-      try {
-        const cur = (typeof Practice !== 'undefined') ? Practice.current : null;
-        if (!cur || !cur.id) { alert('この問題にはIDがありません。'); return; }
-        hidden.add(cur.id);
-        saveHidden(hidden);
-        // 直後の練習から除外
-        if (typeof UI !== 'undefined' && UI.refreshProblems) UI.refreshProblems();
-        if (typeof Practice !== 'undefined' && Practice.pickRandom) Practice.pickRandom();
-      } catch(e) { console.warn('hideBtn error', e); }
-    });
-    check.insertAdjacentElement('afterend', btn);
-  };
-
-  // 2) Exclude hidden from random picking
-  if (typeof Practice !== 'undefined' && typeof Practice.pickRandom === 'function' && !Practice.__hidePatched) {
-    const origPick = Practice.pickRandom.bind(Practice);
-    Practice.pickRandom = function() {
-      // Build candidates excluding hidden
-      const all = (Store && Store.problems) ? (Store.problems || []) : [];
-      const candidates = all.filter(p => !hidden.has(p.id));
-      if (!candidates.length) {
-        // fallback: keep original behavior but warn
-        alert('非表示により選べる問題がありません。非表示を解除するか、新しい問題を追加してください。');
-        return;
+      if (typeof Practice !== 'undefined' && typeof Practice.goPrev === 'function'){
+        Practice.goPrev();
       }
-      // Choose one at random
-      const pick = candidates[(Math.random() * candidates.length) | 0];
-      if (pick && this.setProblemById) this.setProblemById(pick.id);
-      else try { origPick(); } catch(e){}
-    };
-    Practice.__hidePatched = true;
-  }
-
-  // 3) Remove hidden items from "問題" リスト after render
-  if (typeof UI !== 'undefined' && typeof UI.refreshProblems === 'function' && !UI.__hidePatched) {
-    const origRefresh = UI.refreshProblems.bind(UI);
-    UI.refreshProblems = function(q="") {
-      origRefresh(q);
-      try {
-        const container = this.els && this.els.problemsList ? this.els.problemsList : document.getElementById('problemsList');
-        if (!container) return;
-        [...container.querySelectorAll('.item')].forEach(el => {
-          const id = el.dataset && el.dataset.id;
-          if (id && hidden.has(id)) el.remove();
-        });
-      } catch(e) { console.warn('refreshProblems hide filter error', e); }
-    };
-    UI.__hidePatched = true;
-  }
-
-  // 4) Inject the button after UI.init finishes
-  const ready = () => {
-    if (document.readyState === 'complete' || document.readyState === 'interactive') injectButton();
-    else document.addEventListener('DOMContentLoaded', injectButton);
+    });
+    next.parentElement.insertBefore(btn, next);
   };
-  try { ready(); } catch(e){ console.warn('hide addon init error', e); }
+
+  const ready = () => {
+    if (document.readyState === 'complete' || document.readyState === 'interactive') injectPrev();
+    else document.addEventListener('DOMContentLoaded', injectPrev);
+  };
+  try { ready(); } catch(e){ console.warn('prev addon init error', e); }
 })();
