@@ -350,3 +350,85 @@ window.addEventListener("DOMContentLoaded",()=>UI.init());
     }
   }catch(e){ console.warn('CSV Explanation Addon patch failed:', e); }
 })();
+
+
+// === Hide-Problem Addon (no-UI-change, dynamic injection) ===
+;(() => {
+  const KEY = 'hiddenProblemIdsV1';
+  const loadHidden = () => {
+    try { return new Set(JSON.parse(localStorage.getItem(KEY) || '[]')); }
+    catch { return new Set(); }
+  };
+  const saveHidden = (set) => {
+    try { localStorage.setItem(KEY, JSON.stringify([...set])); } catch(e){}
+  };
+  const hidden = loadHidden();
+
+  // 1) Inject button near CHECK, without changing existing HTML
+  const injectButton = () => {
+    const check = document.getElementById('checkBtn');
+    if (!check || document.getElementById('hideBtn')) return;
+    const btn = document.createElement('button');
+    btn.id = 'hideBtn';
+    btn.textContent = '次から表示させない';
+    // Copy classes from CHECK for consistent look
+    btn.className = check.className || '';
+    btn.style.marginLeft = '6px';
+    btn.addEventListener('click', () => {
+      try {
+        const cur = (typeof Practice !== 'undefined') ? Practice.current : null;
+        if (!cur || !cur.id) { alert('この問題にはIDがありません。'); return; }
+        hidden.add(cur.id);
+        saveHidden(hidden);
+        // 直後の練習から除外
+        if (typeof UI !== 'undefined' && UI.refreshProblems) UI.refreshProblems();
+        if (typeof Practice !== 'undefined' && Practice.pickRandom) Practice.pickRandom();
+      } catch(e) { console.warn('hideBtn error', e); }
+    });
+    check.insertAdjacentElement('afterend', btn);
+  };
+
+  // 2) Exclude hidden from random picking
+  if (typeof Practice !== 'undefined' && typeof Practice.pickRandom === 'function' && !Practice.__hidePatched) {
+    const origPick = Practice.pickRandom.bind(Practice);
+    Practice.pickRandom = function() {
+      // Build candidates excluding hidden
+      const all = (Store && Store.problems) ? (Store.problems || []) : [];
+      const candidates = all.filter(p => !hidden.has(p.id));
+      if (!candidates.length) {
+        // fallback: keep original behavior but warn
+        alert('非表示により選べる問題がありません。非表示を解除するか、新しい問題を追加してください。');
+        return;
+      }
+      // Choose one at random
+      const pick = candidates[(Math.random() * candidates.length) | 0];
+      if (pick && this.setProblemById) this.setProblemById(pick.id);
+      else try { origPick(); } catch(e){}
+    };
+    Practice.__hidePatched = true;
+  }
+
+  // 3) Remove hidden items from "問題" リスト after render
+  if (typeof UI !== 'undefined' && typeof UI.refreshProblems === 'function' && !UI.__hidePatched) {
+    const origRefresh = UI.refreshProblems.bind(UI);
+    UI.refreshProblems = function(q="") {
+      origRefresh(q);
+      try {
+        const container = this.els && this.els.problemsList ? this.els.problemsList : document.getElementById('problemsList');
+        if (!container) return;
+        [...container.querySelectorAll('.item')].forEach(el => {
+          const id = el.dataset && el.dataset.id;
+          if (id && hidden.has(id)) el.remove();
+        });
+      } catch(e) { console.warn('refreshProblems hide filter error', e); }
+    };
+    UI.__hidePatched = true;
+  }
+
+  // 4) Inject the button after UI.init finishes
+  const ready = () => {
+    if (document.readyState === 'complete' || document.readyState === 'interactive') injectButton();
+    else document.addEventListener('DOMContentLoaded', injectButton);
+  };
+  try { ready(); } catch(e){ console.warn('hide addon init error', e); }
+})();
