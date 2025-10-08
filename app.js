@@ -178,7 +178,7 @@ const UI={els:{},lastProblems:[],lastHistory:[],_playingEl:null,
       try{
         const rows=CSV.parse(text),h=rows[0];
         const ji=h.indexOf("jp"),ei=h.indexOf("en");
-        if(ji<0||ei<0) throw new Error("CSVヘッダーに jp,en が必要です");
+        if(ji<0||ei<0) throw new Error("CSVヘッダーに jp,en が必要です"); const xi=(()=>{const ks=["explanation","explain","ex","解説"];for(let k of ks){const i=h.indexOf(k);if(i>=0)return i}return -1})();
         let added=0;
         const exists=new Set((Store.problems||[]).map(p=>TOKENS.normalized(p.en)));
         const arr=Store.problems||[];
@@ -186,7 +186,7 @@ const UI={els:{},lastProblems:[],lastHistory:[],_playingEl:null,
           const c=rows[i]; const jp=(c[ji]||"").trim(), en=(c[ei]||"").trim();
           if(!jp||!en) continue;
           if(exists.has(TOKENS.normalized(en))) continue;
-          arr.push({id:crypto.randomUUID(), jp, en});
+          arr.push({id:crypto.randomUUID(), jp, en, ...(xi>=0&&((c[xi]||"").trim())?{ex:(c[xi]||"").trim()}:{})});
           exists.add(TOKENS.normalized(en)); added++;
         }
         Store.problems=arr;
@@ -331,3 +331,22 @@ const UI={els:{},lastProblems:[],lastHistory:[],_playingEl:null,
 };
 
 window.addEventListener("DOMContentLoaded",()=>UI.init());
+
+// --- CSV Explanation Addon (auto-injected) ---
+;(function(){
+  try{
+    if (Practice && typeof Practice.check === 'function' && !Practice.__exPatched){
+      const orig = Practice.check.bind(Practice);
+      Practice.check = function(){
+        const beforeCur = this.current;
+        const res = orig();
+        const cur = this.current || beforeCur;
+        if (cur && (cur.ex || cur.explanation)){
+          UI.setExplanation(cur.ex || cur.explanation);
+        }
+        return res;
+      };
+      Practice.__exPatched = true;
+    }
+  }catch(e){ console.warn('CSV Explanation Addon patch failed:', e); }
+})();
