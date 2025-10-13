@@ -19,6 +19,8 @@ const Store={
     this.repeatCount=clamp(parseInt(localStorage.getItem("repeatCount")||"1"),1,10);
     this.baseVolume=clamp(parseFloat(localStorage.getItem("baseVolume")||"1.0"),0,1);
     this.boostDb=clamp(parseInt(localStorage.getItem("boostDb")||"0"),0,12);
+    this.collectionOrder = JSON.parse(localStorage.getItem("collectionOrder")||"{}");
+    this.collectionIndex = JSON.parse(localStorage.getItem("collectionIndex")||"{}");
 
     const firstSetup=async()=>{
       const rows=CSV.parse(await (await fetch("resources/builtin_problems.csv")).text());
@@ -51,9 +53,11 @@ const Store={
     localStorage.setItem("collections",JSON.stringify(this.collections));
     localStorage.setItem("currentCollection",this.currentName);
     localStorage.setItem("historyMap",JSON.stringify(this.historyMap));
+    localStorage.setItem("collectionOrder",JSON.stringify(this.collectionOrder||{}));
+    localStorage.setItem("collectionIndex",JSON.stringify(this.collectionIndex||{}));
   },
   get problems(){ return this.collections[this.currentName]||[] },
-  set problems(v){ this.collections[this.currentName]=v; this.persist(); },
+  set problems(v){ this.collections[this.currentName]=v; this.resetPointer(this.currentName); this.persist(); },
   get history(){ return this.historyMap[this.currentName]||[] },
   set history(v){ this.historyMap[this.currentName]=v; this.persist(); },
 
@@ -79,6 +83,11 @@ const Store={
     if(!this.collections[name]) return false;
     this.currentName=name; this.persist(); return true;
   },
+  getOrder(name){ name=name||this.currentName; return (this.collectionOrder&&this.collectionOrder[name])||"random"; },
+  setOrder(name, mode){ if(!this.collectionOrder) this.collectionOrder={}; this.collectionOrder[name]=mode==="sequence"?"sequence":"random"; this.persist(); },
+  getPointer(name){ name=name||this.currentName; const p=(this.collectionIndex&&this.collectionIndex[name])||0; return (Number.isFinite(p)?p:0)|0; },
+  setPointer(name, idx){ name=name||this.currentName; if(!this.collectionIndex) this.collectionIndex={}; this.collectionIndex[name]=idx|0; this.persist(); },
+  resetPointer(name){ name=name||this.currentName; if(!this.collectionIndex) this.collectionIndex={}; this.collectionIndex[name]=0; this.persist(); },
 
   // existing settings
   saveApiKey(k){this.apiKey=k;localStorage.setItem("apiKey",k||"")},
@@ -102,7 +111,7 @@ const Practice={
   next(){
     const mode = (typeof Store.getOrder==='function') ? Store.getOrder() : "random";
     if(mode === "sequence") return this.pickSequential();
-    return this .next();
+    return this.pickRandom();
   },
   pickSequential(){
     const all=(Store&&Store.problems)?(Store.problems||[]):[];
@@ -246,7 +255,27 @@ const UI={els:{},lastProblems:[],lastHistory:[],_playingEl:null,
       URL.revokeObjectURL(a.href);
     };
 
-    // history
+    
+// Order select hookup
+(function(){
+  const orderSel = document.getElementById("orderSelect");
+  const dsSel = document.getElementById("datasetSelect");
+  if(!orderSel) return;
+  const applyOrderUI = ()=>{
+    try { orderSel.value = (Store.getOrder&&Store.getOrder(Store.currentName))||"random"; } catch(e){}
+  };
+  orderSel.addEventListener("change", ()=>{
+    const v = orderSel.value;
+    if(Store.setOrder) Store.setOrder(Store.currentName, v);
+  });
+  if(dsSel){
+    const orig = dsSel.onchange;
+    dsSel.onchange = (e)=>{ if(orig) orig.call(dsSel, e); applyOrderUI(); };
+  }
+  // 初期反映
+  applyOrderUI();
+})();
+// history
     this.els.histList=document.getElementById("historyList");
     const histFilter=document.getElementById("histFilter");
     const histSearch=document.getElementById("histSearch");
