@@ -20,10 +20,6 @@ const Store={
     this.baseVolume=clamp(parseFloat(localStorage.getItem("baseVolume")||"1.0"),0,1);
     this.boostDb=clamp(parseInt(localStorage.getItem("boostDb")||"0"),0,12);
 
-    // per-collection order settings & pointer
-    this.collectionOrder = JSON.parse(localStorage.getItem("collectionOrder")||"{}");
-    this.collectionIndex = JSON.parse(localStorage.getItem("collectionIndex")||"{}");
-
     const firstSetup=async()=>{
       const rows=CSV.parse(await (await fetch("resources/builtin_problems.csv")).text());
       const ji=rows[0].indexOf("jp"), ei=rows[0].indexOf("en");
@@ -49,23 +45,21 @@ const Store={
     UI.initAudioControls(this.repeatCount,this.baseVolume,this.boostDb);
     UI.refreshProblems();
     UI.refreshHistory();
-    Practice.pickRandom();
+    Practice.next();
   },
   persist(){
     localStorage.setItem("collections",JSON.stringify(this.collections));
     localStorage.setItem("currentCollection",this.currentName);
     localStorage.setItem("historyMap",JSON.stringify(this.historyMap));
-    localStorage.setItem("collectionOrder",JSON.stringify(this.collectionOrder||{}));
-    localStorage.setItem("collectionIndex",JSON.stringify(this.collectionIndex||{}));
   },
   get problems(){ return this.collections[this.currentName]||[] },
-  set problems(v){ this.collections[this.currentName]=v; this.resetPointer(this.currentName); this.persist(); },
+  set problems(v){ this.collections[this.currentName]=v; this.persist(); },
   get history(){ return this.historyMap[this.currentName]||[] },
   set history(v){ this.historyMap[this.currentName]=v; this.persist(); },
 
   createCollection(name){
     if(!name||this.collections[name]) return false;
-    this.collections[name]=[]; this.historyMap[name]=[]; if(!this.collectionOrder) this.collectionOrder={}; this.collectionOrder[name]="random"; if(!this.collectionIndex) this.collectionIndex={}; this.collectionIndex[name]=0; this.currentName=name; this.persist(); return true;
+    this.collections[name]=[]; this.historyMap[name]=[]; this.currentName=name; this.persist(); return true;
   },
   renameCollection(oldName,newName){
     if(!this.collections[oldName]||!newName||this.collections[newName]) return false;
@@ -77,7 +71,7 @@ const Store={
   },
   deleteCollection(name){
     if(name==="Default") return false;
-    delete this.collections[name]; delete this.historyMap[name]; if(this.collectionOrder) delete this.collectionOrder[name]; if(this.collectionIndex) delete this.collectionIndex[name];
+    delete this.collections[name]; delete this.historyMap[name];
     if(this.currentName===name) this.currentName="Default";
     this.persist(); return true;
   },
@@ -85,12 +79,6 @@ const Store={
     if(!this.collections[name]) return false;
     this.currentName=name; this.persist(); return true;
   },
-
-  getOrder(name){ name=name||this.currentName; return (this.collectionOrder&&this.collectionOrder[name])||"random"; },
-  setOrder(name, mode){ if(!this.collectionOrder) this.collectionOrder={}; this.collectionOrder[name]=mode==="sequence"?"sequence":"random"; this.persist(); },
-  getPointer(name){ name=name||this.currentName; const p=(this.collectionIndex&&this.collectionIndex[name])||0; return (Number.isFinite(p)?p:0)|0; },
-  setPointer(name, idx){ name=name||this.currentName; if(!this.collectionIndex) this.collectionIndex={}; this.collectionIndex[name]=idx|0; this.persist(); },
-  resetPointer(name){ name=name||this.currentName; if(!this.collectionIndex) this.collectionIndex={}; this.collectionIndex[name]=0; this.persist(); },
 
   // existing settings
   saveApiKey(k){this.apiKey=k;localStorage.setItem("apiKey",k||"")},
@@ -110,10 +98,7 @@ const AudioTTS={audio:null,ctx:null,source:null,gainNode:null,ensureAudio(){if(!
 const TTS={cancel(){WebSpeechTTS.cancel();AudioTTS.stop()},wait(ms){return new Promise(r=>setTimeout(r,ms))},async speak(text,lang){if(Store.ttsMode==="audio"){AudioTTS.setBaseVolume(Store.baseVolume);await AudioTTS.playOnce(lang,text)}else{await WebSpeechTTS.speak(text,lang)}},async seqOnce(jp,en){if(Store.ttsMode==="audio"){AudioTTS.setBaseVolume(Store.baseVolume);await AudioTTS.playOnce("ja-JP",jp);await this.wait(Store.delayJPEN*1000);await AudioTTS.playOnce("en-US",en)}else{await WebSpeechTTS.speak(jp,"ja-JP");await this.wait(Store.delayJPEN*1000);await WebSpeechTTS.speak(en,"en-US")}},async seqRepeat(jp,en,repeat){repeat=Math.max(1,Math.min(10,repeat|0));for(let i=0;i<repeat;i++){await this.seqOnce(jp,en);if(i<repeat-1)await this.wait(Store.delayNextJP*1000)}}};
 
 // --- Practice ---
-
-// Enhanced to support per-collection order mode (random or CSV sequence)
 const Practice={
-  // pick next problem based on current collection order
   next(){
     const mode = (typeof Store.getOrder==='function') ? Store.getOrder() : "random";
     if(mode === "sequence") return this.pickSequential();
@@ -122,21 +107,17 @@ const Practice={
   pickSequential(){
     const all=(Store&&Store.problems)?(Store.problems||[]):[];
     if(!all.length){ UI.showNoProblems(); return; }
-    // Skip hidden problems if Hide-Problem addon is active
     let hidden = new Set();
     try{ hidden = typeof UI.getHiddenIds==='function' ? UI.getHiddenIds() : new Set(); }catch(e){ hidden=new Set(); }
-    // Build candidate indices preserving CSV order
     const candIdx = [];
     for(let i=0;i<all.length;i++){ if(!hidden.has(all[i].id)) candIdx.push(i); }
     if(!candIdx.length){ alert('非表示により選べる問題がありません。'); return; }
-    // pointer
     let ptr = (typeof Store.getPointer==='function') ? Store.getPointer(Store.currentName) : 0;
     const pos = Math.max(0, Math.min(ptr, candIdx.length-1));
     const idx = candIdx[pos];
     const p = all[idx];
     if(p && this.setProblem) this.setProblem(p);
     else if(p && this.setProblemById) this.setProblemById(p.id);
-    // advance pointer cyclically
     if(typeof Store.setPointer==='function'){
       const nextPos = (pos+1) % candIdx.length;
       Store.setPointer(Store.currentName, nextPos);
@@ -179,7 +160,7 @@ const UI={els:{},lastProblems:[],lastHistory:[],_playingEl:null,
       if(!name)return;
       if(!Store.createCollection(name)) return alert("作成できません（重複名の可能性）");
       this.populateDatasets(Object.keys(Store.collections), Store.currentName);
-      this.refreshProblems(); this.refreshHistory(); Practice.pickRandom();
+      this.refreshProblems(); this.refreshHistory(); Practice.next();
     };
     document.getElementById("renameDatasetBtn").onclick=()=>{
       const old=this.els.dsSelect.value;
@@ -187,7 +168,7 @@ const UI={els:{},lastProblems:[],lastHistory:[],_playingEl:null,
       if(!name||name===old)return;
       if(!Store.renameCollection(old,name)) return alert("名称変更できません");
       this.populateDatasets(Object.keys(Store.collections), Store.currentName);
-      this.refreshProblems(); this.refreshHistory(); Practice.pickRandom();
+      this.refreshProblems(); this.refreshHistory(); Practice.next();
     };
     document.getElementById("deleteDatasetBtn").onclick=()=>{
       const name=this.els.dsSelect.value;
@@ -195,13 +176,13 @@ const UI={els:{},lastProblems:[],lastHistory:[],_playingEl:null,
       if(confirm(`「${name}」を削除しますか？`)){
         if(!Store.deleteCollection(name)) return alert("削除できません");
         this.populateDatasets(Object.keys(Store.collections), Store.currentName);
-        this.refreshProblems(); this.refreshHistory(); Practice.pickRandom();
+        this.refreshProblems(); this.refreshHistory(); Practice.next();
       }
     };
     this.els.dsSelect.addEventListener("change",()=>{
       const n=this.els.dsSelect.value;
       if(Store.switchCollection(n)){
-        this.refreshProblems(); this.refreshHistory(); Practice.pickRandom();
+        this.refreshProblems(); this.refreshHistory(); Practice.next();
       }
     });
 
@@ -265,21 +246,7 @@ const UI={els:{},lastProblems:[],lastHistory:[],_playingEl:null,
       URL.revokeObjectURL(a.href);
     };
 
-    
-// Order select hookup
-const orderSel = document.getElementById("orderSelect");
-if(orderSel){
-  const applyOrderUI = ()=>{ try{ orderSel.value = (Store.getOrder&&Store.getOrder(Store.currentName))||"random"; }catch(e){} };
-  orderSel.addEventListener("change", ()=>{ const v=orderSel.value; if(Store.setOrder) Store.setOrder(Store.currentName, v); });
-  applyOrderUI();
-  // Patch datasetSelect change to refresh order UI as well
-  const dsSel = document.getElementById("datasetSelect");
-  if(dsSel){
-    const origOnChange = dsSel.onchange;
-    dsSel.onchange = (e)=>{ if(origOnChange) origOnChange.call(dsSel, e); applyOrderUI(); };
-  }
-}
-// history
+    // history
     this.els.histList=document.getElementById("historyList");
     const histFilter=document.getElementById("histFilter");
     const histSearch=document.getElementById("histSearch");
@@ -442,7 +409,7 @@ window.addEventListener("DOMContentLoaded",()=>UI.init());
         if(!cur||!cur.id){ alert('この問題にはIDがありません。'); return; }
         hidden.add(cur.id); save(hidden);
         if(typeof UI!=='undefined'&&UI.refreshProblems) UI.refreshProblems();
-        if(typeof Practice!=='undefined'&&Practice.pickRandom) Practice.pickRandom();
+        if(typeof Practice!=='undefined'&&Practice.pickRandom) Practice.next();
       }catch(e){}
     });
     check.insertAdjacentElement('afterend',btn);
