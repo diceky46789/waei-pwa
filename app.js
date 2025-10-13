@@ -19,8 +19,6 @@ const Store={
     this.repeatCount=clamp(parseInt(localStorage.getItem("repeatCount")||"1"),1,10);
     this.baseVolume=clamp(parseFloat(localStorage.getItem("baseVolume")||"1.0"),0,1);
     this.boostDb=clamp(parseInt(localStorage.getItem("boostDb")||"0"),0,12);
-    this.collectionOrder = JSON.parse(localStorage.getItem("collectionOrder")||"{}");
-    this.collectionIndex = JSON.parse(localStorage.getItem("collectionIndex")||"{}");
 
     const firstSetup=async()=>{
       const rows=CSV.parse(await (await fetch("resources/builtin_problems.csv")).text());
@@ -47,17 +45,15 @@ const Store={
     UI.initAudioControls(this.repeatCount,this.baseVolume,this.boostDb);
     UI.refreshProblems();
     UI.refreshHistory();
-    Practice.next();
+    Practice.pickRandom();
   },
   persist(){
     localStorage.setItem("collections",JSON.stringify(this.collections));
     localStorage.setItem("currentCollection",this.currentName);
     localStorage.setItem("historyMap",JSON.stringify(this.historyMap));
-    localStorage.setItem("collectionOrder",JSON.stringify(this.collectionOrder||{}));
-    localStorage.setItem("collectionIndex",JSON.stringify(this.collectionIndex||{}));
   },
   get problems(){ return this.collections[this.currentName]||[] },
-  set problems(v){ this.collections[this.currentName]=v; this.resetPointer(this.currentName); this.persist(); },
+  set problems(v){ this.collections[this.currentName]=v; this.persist(); },
   get history(){ return this.historyMap[this.currentName]||[] },
   set history(v){ this.historyMap[this.currentName]=v; this.persist(); },
 
@@ -83,11 +79,6 @@ const Store={
     if(!this.collections[name]) return false;
     this.currentName=name; this.persist(); return true;
   },
-  getOrder(name){ name=name||this.currentName; return (this.collectionOrder&&this.collectionOrder[name])||"random"; },
-  setOrder(name, mode){ if(!this.collectionOrder) this.collectionOrder={}; this.collectionOrder[name]=mode==="sequence"?"sequence":"random"; this.persist(); },
-  getPointer(name){ name=name||this.currentName; const p=(this.collectionIndex&&this.collectionIndex[name])||0; return (Number.isFinite(p)?p:0)|0; },
-  setPointer(name, idx){ name=name||this.currentName; if(!this.collectionIndex) this.collectionIndex={}; this.collectionIndex[name]=idx|0; this.persist(); },
-  resetPointer(name){ name=name||this.currentName; if(!this.collectionIndex) this.collectionIndex={}; this.collectionIndex[name]=0; this.persist(); },
 
   // existing settings
   saveApiKey(k){this.apiKey=k;localStorage.setItem("apiKey",k||"")},
@@ -107,45 +98,7 @@ const AudioTTS={audio:null,ctx:null,source:null,gainNode:null,ensureAudio(){if(!
 const TTS={cancel(){WebSpeechTTS.cancel();AudioTTS.stop()},wait(ms){return new Promise(r=>setTimeout(r,ms))},async speak(text,lang){if(Store.ttsMode==="audio"){AudioTTS.setBaseVolume(Store.baseVolume);await AudioTTS.playOnce(lang,text)}else{await WebSpeechTTS.speak(text,lang)}},async seqOnce(jp,en){if(Store.ttsMode==="audio"){AudioTTS.setBaseVolume(Store.baseVolume);await AudioTTS.playOnce("ja-JP",jp);await this.wait(Store.delayJPEN*1000);await AudioTTS.playOnce("en-US",en)}else{await WebSpeechTTS.speak(jp,"ja-JP");await this.wait(Store.delayJPEN*1000);await WebSpeechTTS.speak(en,"en-US")}},async seqRepeat(jp,en,repeat){repeat=Math.max(1,Math.min(10,repeat|0));for(let i=0;i<repeat;i++){await this.seqOnce(jp,en);if(i<repeat-1)await this.wait(Store.delayNextJP*1000)}}};
 
 // --- Practice ---
-const Practice={
-  next(){
-    const mode = (typeof Store.getOrder==='function') ? Store.getOrder() : "random";
-    if(mode === "sequence") return this.pickSequential();
-    return this.pickRandom();
-  },
-  pickSequential(){
-    const all=(Store&&Store.problems)?(Store.problems||[]):[];
-    if(!all.length){ UI.showNoProblems(); return; }
-    let hidden = new Set();
-    try{ hidden = typeof UI.getHiddenIds==='function' ? UI.getHiddenIds() : new Set(); }catch(e){ hidden=new Set(); }
-    const candIdx = [];
-    for(let i=0;i<all.length;i++){ if(!hidden.has(all[i].id)) candIdx.push(i); }
-    if(!candIdx.length){ alert('非表示により選べる問題がありません。'); return; }
-    let ptr = (typeof Store.getPointer==='function') ? Store.getPointer(Store.currentName) : 0;
-    const pos = Math.max(0, Math.min(ptr, candIdx.length-1));
-    const idx = candIdx[pos];
-    const p = all[idx];
-    if(p && this.setProblem) this.setProblem(p);
-    else if(p && this.setProblemById) this.setProblemById(p.id);
-    if(typeof Store.setPointer==='function'){
-      const nextPos = (pos+1) % candIdx.length;
-      Store.setPointer(Store.currentName, nextPos);
-    }
-  },
-current:null,pool:[],answer:[],pickRandom(){const arr=Store.problems;if(!arr||!arr.length){UI.showNoProblems();return}this.current=arr[Math.floor(Math.random()*arr.length)];UI.setJP(this.current.jp);this.resetTokens();UI.clearResult()},setProblemById(id){const p=(Store.problems||[]).find(x=>x.id===id);if(!p)return;this.current=p;UI.setJP(p.jp);this.resetTokens();UI.clearResult();UI.switchTab("practice")},resetTokens(){this.pool=TOKENS.tokenize(this.current.en).sort(()=>Math.random()-0.5);this.answer=[];UI.renderPool(this.pool);UI.renderAnswer(this.answer)},undo(){if(this.answer.length){const t=this.answer.pop();this.pool.push(t);UI.renderPool(this.pool);UI.renderAnswer(this.answer)}},shuffle(){this.pool=this.pool.sort(()=>Math.random()-0.5);UI.renderPool(this.pool)},tapPool(i){const [t]=this.pool.splice(i,1);this.answer.push(t);UI.renderPool(this.pool);UI.renderAnswer(this.answer)},tapAnswer(i){const [t]=this.answer.splice(i,1);this.pool.push(t);UI.renderPool(this.pool);UI.renderAnswer(this.answer)},check(){const ans=TOKENS.detokenize(this.answer);const ok=TOKENS.normalized(ans)===TOKENS.normalized(this.current.en);const rec={id:crypto.randomUUID(),problemID:this.current.id,timestamp:Date.now(),userAnswer:ans,correct:ok};Store.history=[rec,...(Store.history||[])];UI.showResult(ok,this.current.en);UI.refreshHistory();this.explain(ans,ok);if(ok&&document.getElementById("autoplayChk").checked){this.next()}},async explain(userEN,ok){
-      // OFFLINE: show CSV explanation only
-      try {
-        const cur = this.current;
-        const ex = (cur && (cur.ex || cur.explanation)) ? (cur.ex || cur.explanation) : "";
-        if (typeof UI !== 'undefined' && typeof UI.setExplanation === 'function') {
-          UI.setExplanation(ex || "（解説なし）");
-        }
-      } catch (e) {
-        if (typeof UI !== 'undefined' && typeof UI.setExplanation === 'function') {
-          UI.setExplanation("（解説なし）");
-        }
-      }
-    }};
+const Practice={current:null,pool:[],answer:[],pickRandom(){const arr=Store.problems;if(!arr||!arr.length){UI.showNoProblems();return}this.current=arr[Math.floor(Math.random()*arr.length)];UI.setJP(this.current.jp);this.resetTokens();UI.clearResult()},setProblemById(id){const p=(Store.problems||[]).find(x=>x.id===id);if(!p)return;this.current=p;UI.setJP(p.jp);this.resetTokens();UI.clearResult();UI.switchTab("practice")},resetTokens(){this.pool=TOKENS.tokenize(this.current.en).sort(()=>Math.random()-0.5);this.answer=[];UI.renderPool(this.pool);UI.renderAnswer(this.answer)},undo(){if(this.answer.length){const t=this.answer.pop();this.pool.push(t);UI.renderPool(this.pool);UI.renderAnswer(this.answer)}},shuffle(){this.pool=this.pool.sort(()=>Math.random()-0.5);UI.renderPool(this.pool)},tapPool(i){const [t]=this.pool.splice(i,1);this.answer.push(t);UI.renderPool(this.pool);UI.renderAnswer(this.answer)},tapAnswer(i){const [t]=this.answer.splice(i,1);this.pool.push(t);UI.renderPool(this.pool);UI.renderAnswer(this.answer)},check(){const ans=TOKENS.detokenize(this.answer);const ok=TOKENS.normalized(ans)===TOKENS.normalized(this.current.en);const rec={id:crypto.randomUUID(),problemID:this.current.id,timestamp:Date.now(),userAnswer:ans,correct:ok};Store.history=[rec,...(Store.history||[])];UI.showResult(ok,this.current.en);UI.refreshHistory();this.explain(ans,ok);if(ok&&document.getElementById("autoplayChk").checked){this.pickRandom()}},async explain(userEN,ok){UI.showExplaining(true);const key=Store.apiKey;if(!key){UI.setExplanation("（APIキー未設定のため、解説自動生成はスキップ）");UI.showExplaining(false);return}try{const prompt=`あなたは英語学習者向けに、語順の理由を日本語でわかりやすく解説する先生です。\\n日本文: ${this.current.jp}\\n正解の英語: ${this.current.en}\\nユーザーの英語: ${userEN}`;const resp=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:{"Authorization":`Bearer ${key}`,"Content-Type":"application/json"},body:JSON.stringify({model:"gpt-4.1-mini",input:[{role:"user",content:prompt}],temperature:0.2})});if(!resp.ok)throw new Error(await resp.text());const data=await resp.json();let text="";if(data?.output?.content)text=data.output.content.map(c=>c.text||"").join("\\n").trim();else if(data?.choices?.[0]?.message?.content)text=data.choices[0].message.content;UI.setExplanation(text||"（解説なし）")}catch(e){UI.setExplanation("解説の取得に失敗しました: "+e.message)}finally{UI.showExplaining(false)}}};
 
 // --- List auto player (unchanged) ---
 const ListAuto={abort:false,stop(){this.abort=true;TTS.cancel();UI.clearPlaying()},async playItemsJPEN(items,container){this.abort=false;for(const it of items){if(this.abort)break;UI.setPlaying(container,it.id);const{jp,en}=it;if(!jp||!en)continue;await TTS.seqRepeat(jp,en,Store.repeatCount);if(this.abort)break;await TTS.wait(Store.delayNextJP*1000)}UI.clearPlaying()}};
@@ -169,7 +122,7 @@ const UI={els:{},lastProblems:[],lastHistory:[],_playingEl:null,
       if(!name)return;
       if(!Store.createCollection(name)) return alert("作成できません（重複名の可能性）");
       this.populateDatasets(Object.keys(Store.collections), Store.currentName);
-      this.refreshProblems(); this.refreshHistory(); Practice.next();
+      this.refreshProblems(); this.refreshHistory(); Practice.pickRandom();
     };
     document.getElementById("renameDatasetBtn").onclick=()=>{
       const old=this.els.dsSelect.value;
@@ -177,7 +130,7 @@ const UI={els:{},lastProblems:[],lastHistory:[],_playingEl:null,
       if(!name||name===old)return;
       if(!Store.renameCollection(old,name)) return alert("名称変更できません");
       this.populateDatasets(Object.keys(Store.collections), Store.currentName);
-      this.refreshProblems(); this.refreshHistory(); Practice.next();
+      this.refreshProblems(); this.refreshHistory(); Practice.pickRandom();
     };
     document.getElementById("deleteDatasetBtn").onclick=()=>{
       const name=this.els.dsSelect.value;
@@ -185,13 +138,13 @@ const UI={els:{},lastProblems:[],lastHistory:[],_playingEl:null,
       if(confirm(`「${name}」を削除しますか？`)){
         if(!Store.deleteCollection(name)) return alert("削除できません");
         this.populateDatasets(Object.keys(Store.collections), Store.currentName);
-        this.refreshProblems(); this.refreshHistory(); Practice.next();
+        this.refreshProblems(); this.refreshHistory(); Practice.pickRandom();
       }
     };
     this.els.dsSelect.addEventListener("change",()=>{
       const n=this.els.dsSelect.value;
       if(Store.switchCollection(n)){
-        this.refreshProblems(); this.refreshHistory(); Practice.next();
+        this.refreshProblems(); this.refreshHistory(); Practice.pickRandom();
       }
     });
 
@@ -206,7 +159,7 @@ const UI={els:{},lastProblems:[],lastHistory:[],_playingEl:null,
     document.getElementById("resetBtn").onclick=()=>Practice.resetTokens();
     document.getElementById("shuffleBtn").onclick=()=>Practice.shuffle();
     document.getElementById("checkBtn").onclick=()=>Practice.check();
-    document.getElementById("nextBtn").onclick=()=>Practice.next();
+    document.getElementById("nextBtn").onclick=()=>Practice.pickRandom();
     document.getElementById("speakJPBtn").onclick=async()=>{ListAuto.stop();await TTS.speak(Practice.current.jp,"ja-JP")};
     document.getElementById("speakENBtn").onclick=async()=>{ListAuto.stop();await TTS.speak(Practice.current.en,"en-US")};
     document.getElementById("speakSeqBtn").onclick=async()=>{ListAuto.stop();await TTS.seqRepeat(Practice.current.jp,Practice.current.en,Store.repeatCount)};
@@ -225,7 +178,7 @@ const UI={els:{},lastProblems:[],lastHistory:[],_playingEl:null,
       try{
         const rows=CSV.parse(text),h=rows[0];
         const ji=h.indexOf("jp"),ei=h.indexOf("en");
-        if(ji<0||ei<0) throw new Error("CSVヘッダーに jp,en が必要です"); const xi=(()=>{const ks=["explanation","explain","ex","解説"];for(let k of ks){const i=h.indexOf(k);if(i>=0)return i}return -1})();
+        if(ji<0||ei<0) throw new Error("CSVヘッダーに jp,en が必要です");
         let added=0;
         const exists=new Set((Store.problems||[]).map(p=>TOKENS.normalized(p.en)));
         const arr=Store.problems||[];
@@ -233,7 +186,7 @@ const UI={els:{},lastProblems:[],lastHistory:[],_playingEl:null,
           const c=rows[i]; const jp=(c[ji]||"").trim(), en=(c[ei]||"").trim();
           if(!jp||!en) continue;
           if(exists.has(TOKENS.normalized(en))) continue;
-          arr.push({id:crypto.randomUUID(), jp, en, ...(typeof xi!=="undefined" && xi>=0 && ((c[xi]||"").trim()) ? {ex:(c[xi]||"").trim()} : {})});
+          arr.push({id:crypto.randomUUID(), jp, en});
           exists.add(TOKENS.normalized(en)); added++;
         }
         Store.problems=arr;
@@ -255,27 +208,7 @@ const UI={els:{},lastProblems:[],lastHistory:[],_playingEl:null,
       URL.revokeObjectURL(a.href);
     };
 
-    
-// Order select hookup
-(function(){
-  const orderSel = document.getElementById("orderSelect");
-  const dsSel = document.getElementById("datasetSelect");
-  if(!orderSel) return;
-  const applyOrderUI = ()=>{
-    try { orderSel.value = (Store.getOrder&&Store.getOrder(Store.currentName))||"random"; } catch(e){}
-  };
-  orderSel.addEventListener("change", ()=>{
-    const v = orderSel.value;
-    if(Store.setOrder) Store.setOrder(Store.currentName, v);
-  });
-  if(dsSel){
-    const orig = dsSel.onchange;
-    dsSel.onchange = (e)=>{ if(orig) orig.call(dsSel, e); applyOrderUI(); };
-  }
-  // 初期反映
-  applyOrderUI();
-})();
-// history
+    // history
     this.els.histList=document.getElementById("historyList");
     const histFilter=document.getElementById("histFilter");
     const histSearch=document.getElementById("histSearch");
@@ -399,121 +332,61 @@ const UI={els:{},lastProblems:[],lastHistory:[],_playingEl:null,
 
 window.addEventListener("DOMContentLoaded",()=>UI.init());
 
-// --- CSV Explanation after Check (idempotent) ---
-;(()=>{
-  try{
-    if (typeof Practice!=='undefined' && typeof Practice.check==='function' && !Practice.__exPatched){
-      const orig = Practice.check.bind(Practice);
-      Practice.check = function(){
-        const before = this.current;
-        const res = orig();
-        const cur = this.current || before;
-        if (cur && (cur.ex || cur.explanation)){
-          if (typeof UI!=='undefined' && typeof UI.setExplanation==='function'){
-            UI.setExplanation(cur.ex || cur.explanation);
-          }
+
+// === Prev Button Addon (no-UI-change, dynamic injection) ===
+;(() => {
+  // Keep an in-memory sequence of visited problem IDs
+  const seq = [];
+  // 1) Wrap setProblemById to track navigation
+  if (typeof Practice !== 'undefined' && typeof Practice.setProblemById === 'function' && !Practice.__prevPatched) {
+    const origSet = Practice.setProblemById.bind(Practice);
+    Practice.setProblemById = function(id){
+      // record current before switching
+      try {
+        if (this.current && this.current.id) {
+          const last = seq[seq.length-1];
+          if (last !== this.current.id) seq.push(this.current.id);
         }
-        return res;
-      };
-      Practice.__exPatched = true;
-    }
-  }catch(e){}
-})();
-// --- Hide-Problem Addon (UI preserved) ---
-;(()=>{
-  const KEY='hiddenProblemIdsV1';
-  const load=()=>{try{return new Set(JSON.parse(localStorage.getItem(KEY)||'[]'))}catch{return new Set()}};
-  const save=(s)=>{try{localStorage.setItem(KEY,JSON.stringify([...s]))}catch(e){}}
-  const hidden=load();
-
-  const inject=()=>{
-    const check=document.getElementById('checkBtn');
-    if(!check||document.getElementById('hideBtn')) return;
-    const btn=document.createElement('button');
-    btn.id='hideBtn'; btn.textContent='次から表示させない';
-    btn.className=check.className||''; btn.style.marginLeft='6px';
-    btn.addEventListener('click',()=>{
-      try{
-        const cur=(typeof Practice!=='undefined')?Practice.current:null;
-        if(!cur||!cur.id){ alert('この問題にはIDがありません。'); return; }
-        hidden.add(cur.id); save(hidden);
-        if(typeof UI!=='undefined'&&UI.refreshProblems) UI.refreshProblems();
-        if(typeof Practice!=='undefined'&&Practice.pickRandom) Practice.next();
-      }catch(e){}
-    });
-    check.insertAdjacentElement('afterend',btn);
-  };
-
-  if(typeof Practice!=='undefined'&&typeof Practice.pickRandom==='function'&&!Practice.__hidePick){
-    const orig=Practice.pickRandom.bind(Practice);
-    Practice.pickRandom=function(){
-      const all=(Store&&Store.problems)?(Store.problems||[]):[];
-      const cand=all.filter(p=>!hidden.has(p.id));
-      if(!cand.length){ alert('非表示により選べる問題がありません。'); return; }
-      const pick=cand[(Math.random()*cand.length)|0];
-      if(pick&&this.setProblemById) this.setProblemById(pick.id); else try{orig()}catch(e){}
-    };
-    Practice.__hidePick=true;
-  }
-
-  if(typeof UI!=='undefined'&&typeof UI.refreshProblems==='function'&&!UI.__hideList){
-    const origR=UI.refreshProblems.bind(UI);
-    UI.refreshProblems=function(q=""){
-      origR(q);
-      try{
-        const c=this.els&&this.els.problemsList?this.els.problemsList:document.getElementById('problemsList');
-        if(!c) return;
-        [...c.querySelectorAll('.item')].forEach(el=>{
-          const id=el.dataset&&el.dataset.id;
-          if(id && hidden.has(id)) el.remove();
-        });
-      }catch(e){}
-    };
-    UI.__hideList=true;
-  }
-
-  if(document.readyState==='complete'||document.readyState==='interactive') inject();
-  else document.addEventListener('DOMContentLoaded',inject);
-})();
-// --- Prev Button Addon (UI preserved) ---
-;(()=>{
-  const seq=[];
-  if(typeof Practice!=='undefined'&&typeof Practice.setProblemById==='function'&&!Practice.__prevSeq){
-    const origSet=Practice.setProblemById.bind(Practice);
-    Practice.setProblemById=function(id){
-      try{
-        if(this.current&&this.current.id){
-          const last=seq[seq.length-1];
-          if(last!==this.current.id) seq.push(this.current.id);
-        }
-      }catch(e){}
+      } catch(e){/*noop*/}
       return origSet(id);
     };
-    Practice.goPrev=function(){
+    // Provide a goPrev method without altering other specs
+    Practice.goPrev = function(){
+      // Pop until we find an id different from current
       try{
-        const curId=(this.current&&this.current.id)?this.current.id:null;
-        let target=null;
-        while(seq.length){
-          const cand=seq.pop();
-          if(cand && cand!==curId){ target=cand; break; }
+        let targetId = null;
+        // ensure current is not reselected
+        const curId = (this.current && this.current.id) ? this.current.id : null;
+        while (seq.length){
+          const candidate = seq.pop();
+          if (candidate && candidate !== curId){ targetId = candidate; break; }
         }
-        if(target&&this.setProblemById) this.setProblemById(target);
-      }catch(e){}
+        if (targetId && this.setProblemById) this.setProblemById(targetId);
+      }catch(e){/*noop*/}
     };
-    Practice.__prevSeq=true;
+    Practice.__prevPatched = true;
   }
 
-  const injectPrev=()=>{
-    const next=document.getElementById('nextBtn');
-    if(!next||document.getElementById('prevInjectedBtn')) return;
-    const btn=document.createElement('button');
-    btn.id='prevInjectedBtn'; btn.textContent='前へ';
-    btn.className=next.className||''; btn.style.marginRight='6px';
-    btn.addEventListener('click',()=>{
-      if(typeof Practice!=='undefined'&&typeof Practice.goPrev==='function') Practice.goPrev();
+  // 2) Inject a "前へ" button just to the left of existing nextBtn
+  const injectPrev = () => {
+    const next = document.getElementById('nextBtn');
+    if (!next || document.getElementById('prevInjectedBtn')) return;
+    const btn = document.createElement('button');
+    btn.id = 'prevInjectedBtn';
+    btn.textContent = '前へ';
+    btn.className = next.className || ''; // match style
+    btn.style.marginRight = '6px';
+    btn.addEventListener('click', () => {
+      if (typeof Practice !== 'undefined' && typeof Practice.goPrev === 'function'){
+        Practice.goPrev();
+      }
     });
-    next.parentElement.insertBefore(btn,next);
+    next.parentElement.insertBefore(btn, next);
   };
-  if(document.readyState==='complete'||document.readyState==='interactive') injectPrev();
-  else document.addEventListener('DOMContentLoaded',injectPrev);
+
+  const ready = () => {
+    if (document.readyState === 'complete' || document.readyState === 'interactive') injectPrev();
+    else document.addEventListener('DOMContentLoaded', injectPrev);
+  };
+  try { ready(); } catch(e){ console.warn('prev addon init error', e); }
 })();
