@@ -102,7 +102,7 @@ const Practice={
   next(){
     const mode = (typeof Store.getOrder==='function') ? Store.getOrder() : "random";
     if(mode === "sequence") return this.pickSequential();
-    return this.pickRandom();
+    return this .next();
   },
   pickSequential(){
     const all=(Store&&Store.problems)?(Store.problems||[]):[];
@@ -123,7 +123,7 @@ const Practice={
       Store.setPointer(Store.currentName, nextPos);
     }
   },
-current:null,pool:[],answer:[],pickRandom(){const arr=Store.problems;if(!arr||!arr.length){UI.showNoProblems();return}this.current=arr[Math.floor(Math.random()*arr.length)];UI.setJP(this.current.jp);this.resetTokens();UI.clearResult()},setProblemById(id){const p=(Store.problems||[]).find(x=>x.id===id);if(!p)return;this.current=p;UI.setJP(p.jp);this.resetTokens();UI.clearResult();UI.switchTab("practice")},resetTokens(){this.pool=TOKENS.tokenize(this.current.en).sort(()=>Math.random()-0.5);this.answer=[];UI.renderPool(this.pool);UI.renderAnswer(this.answer)},undo(){if(this.answer.length){const t=this.answer.pop();this.pool.push(t);UI.renderPool(this.pool);UI.renderAnswer(this.answer)}},shuffle(){this.pool=this.pool.sort(()=>Math.random()-0.5);UI.renderPool(this.pool)},tapPool(i){const [t]=this.pool.splice(i,1);this.answer.push(t);UI.renderPool(this.pool);UI.renderAnswer(this.answer)},tapAnswer(i){const [t]=this.answer.splice(i,1);this.pool.push(t);UI.renderPool(this.pool);UI.renderAnswer(this.answer)},check(){const ans=TOKENS.detokenize(this.answer);const ok=TOKENS.normalized(ans)===TOKENS.normalized(this.current.en);const rec={id:crypto.randomUUID(),problemID:this.current.id,timestamp:Date.now(),userAnswer:ans,correct:ok};Store.history=[rec,...(Store.history||[])];UI.showResult(ok,this.current.en);UI.refreshHistory();this.explain(ans,ok);if(ok&&document.getElementById("autoplayChk").checked){this.pickRandom()}},async explain(userEN,ok){
+current:null,pool:[],answer:[],pickRandom(){const arr=Store.problems;if(!arr||!arr.length){UI.showNoProblems();return}this.current=arr[Math.floor(Math.random()*arr.length)];UI.setJP(this.current.jp);this.resetTokens();UI.clearResult()},setProblemById(id){const p=(Store.problems||[]).find(x=>x.id===id);if(!p)return;this.current=p;UI.setJP(p.jp);this.resetTokens();UI.clearResult();UI.switchTab("practice")},resetTokens(){this.pool=TOKENS.tokenize(this.current.en).sort(()=>Math.random()-0.5);this.answer=[];UI.renderPool(this.pool);UI.renderAnswer(this.answer)},undo(){if(this.answer.length){const t=this.answer.pop();this.pool.push(t);UI.renderPool(this.pool);UI.renderAnswer(this.answer)}},shuffle(){this.pool=this.pool.sort(()=>Math.random()-0.5);UI.renderPool(this.pool)},tapPool(i){const [t]=this.pool.splice(i,1);this.answer.push(t);UI.renderPool(this.pool);UI.renderAnswer(this.answer)},tapAnswer(i){const [t]=this.answer.splice(i,1);this.pool.push(t);UI.renderPool(this.pool);UI.renderAnswer(this.answer)},check(){const ans=TOKENS.detokenize(this.answer);const ok=TOKENS.normalized(ans)===TOKENS.normalized(this.current.en);const rec={id:crypto.randomUUID(),problemID:this.current.id,timestamp:Date.now(),userAnswer:ans,correct:ok};Store.history=[rec,...(Store.history||[])];UI.showResult(ok,this.current.en);UI.refreshHistory();this.explain(ans,ok);if(ok&&document.getElementById("autoplayChk").checked){this.next()}},async explain(userEN,ok){
       // OFFLINE: show CSV explanation only
       try {
         const cur = this.current;
