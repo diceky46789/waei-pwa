@@ -254,7 +254,7 @@ const UI={els:{},lastProblems:[],lastHistory:[],_playingEl:null,
     if(window.matchMedia('(display-mode: standalone)').matches){ ih.classList.add("hidden") }
     else { ih.classList.remove("hidden"); ih.onclick=()=>alert("Safariの共有→『ホーム画面に追加』") }
 
-    if("serviceWorker" in navigator){ window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js")) }
+    if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.serviceWorker.register("sw.js").then(reg=>{function ensureBtn(){let b=document.getElementById("updateHint");if(!b){b=document.createElement("a");b.id="updateHint";b.href="#";b.textContent="更新を反映";b.className="install-hint hidden";document.querySelector("footer")?.appendChild(b);}return b;}function promptUpdate(worker){const btn=ensureBtn();btn.classList.remove("hidden");btn.onclick=(e)=>{e.preventDefault();worker.postMessage({type:"SKIP_WAITING"});};}if(reg.waiting){promptUpdate(reg.waiting);}reg.addEventListener("updatefound",()=>{const nw=reg.installing;if(!nw)return;nw.addEventListener("statechange",()=>{if(nw.state==="installed"&&navigator.serviceWorker.controller){promptUpdate(nw);}});});navigator.serviceWorker.addEventListener("controllerchange",()=>{location.reload();});});});}
 
     // kick
     Store.load();
