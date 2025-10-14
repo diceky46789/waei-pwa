@@ -540,6 +540,8 @@ setTimeout(()=>{ nextQuestion(); }, d2*1000);
   });
 
   function refreshDatasetsUI(){
+    try{ renderCatalogTree(); }catch(e){}
+
     const paths = Object.keys(datasets);
     renderDatasetList();
     renderTree(el.datasetTree, buildTree(paths));
@@ -564,7 +566,129 @@ setTimeout(()=>{ nextQuestion(); }, d2*1000);
     save(K.DATASETS, datasets);
   }
 
-  function start(){
+  
+  /*** Catalog (問題一覧) ***/
+  let catalogPath = null;
+  let catalogAbort = { stop:false };
+
+  // Elements for catalog (gracefully skip if not present)
+  const catTreeEl = document.getElementById('catalogTree');
+  const catListEl = document.getElementById('catalogList');
+  const catPlayAllEl = document.getElementById('catalogPlayAll');
+  const catStopEl = document.getElementById('catalogStop');
+  const catStatusEl = document.getElementById('catalogStatus');
+
+  function renderCatalogTree(){
+    if(!catTreeEl) return;
+    const paths = Object.keys(datasets);
+    const tree = (function build(paths){
+      const root = {};
+      for(const p of paths){
+        const parts = p.split('/').filter(Boolean);
+        let node = root;
+        for(let i=0;i<parts.length;i++){
+          const part = parts[i];
+          node[part] = node[part] || {__children__: {}, __full__: parts.slice(0,i+1).join('/')};
+          node = node[part].__children__;
+        }
+      }
+      return root;
+    })(paths);
+    catTreeEl.innerHTML = '';
+    (function walk(node, parentEl){
+      for(const name of Object.keys(node).sort()){
+        const n = node[name];
+        const item = document.createElement('div');
+        item.className = 'tree-item';
+        item.textContent = name;
+        item.dataset.path = n.__full__;
+        parentEl.appendChild(item);
+        item.addEventListener('click', ()=>{
+          catalogPath = item.dataset.path;
+          Array.from(catTreeEl.querySelectorAll('.tree-item')).forEach(e=>{
+            e.style.background = (e.dataset.path===catalogPath)? '#e8f0ff':'';
+          });
+          renderCatalogList();
+        });
+        const children = n.__children__;
+        if(children && Object.keys(children).length){
+          const folder = document.createElement('div');
+          folder.className = 'tree-folder';
+          parentEl.appendChild(folder);
+          walk(children, folder);
+        }
+      }
+    })(tree, catTreeEl);
+  }
+
+  function renderCatalogList(){
+    if(!catListEl) return;
+    catListEl.innerHTML = '';
+    if(!catalogPath || !datasets[catalogPath]){
+      if(catStatusEl) catStatusEl.textContent = 'データセットを選択してください。';
+      return;
+    }
+    if(catStatusEl) catStatusEl.textContent = '';
+    const items = datasets[catalogPath].items;
+    items.forEach((it, idx)=>{
+      const con = document.createElement('div');
+      con.className = 'hist-item';
+      const head = document.createElement('div');
+      head.className = 'hist-top';
+      const title = document.createElement('div');
+      title.className = 'hist-title';
+      title.textContent = `#${idx+1}`;
+      const act = document.createElement('div');
+      act.className = 'hist-actions';
+      const btn = document.createElement('button');
+      btn.textContent = 'この問題を再生';
+      btn.addEventListener('click', ()=> playOne(it));
+      act.appendChild(btn);
+      head.appendChild(title);
+      head.appendChild(act);
+      const jp = document.createElement('div'); jp.textContent = it.jp; jp.className='bold';
+      const en = document.createElement('div'); en.textContent = it.en;
+      con.appendChild(head); con.appendChild(jp); con.appendChild(en);
+      catListEl.appendChild(con);
+    });
+  }
+
+  async function playOne(item){
+    const d1 = Math.max(0.5, Math.min(10, Number(el.delayJaToEn.value || settings.delayJaToEn)));
+    await say(item.jp, 'ja-JP', settings.jaVoiceURI || el.jaVoice.value);
+    await new Promise(r=>setTimeout(r, d1*1000));
+    await say(item.en, 'en-US', settings.enVoiceURI || el.enVoice.value);
+  }
+
+  async function playAll(path){
+    if(!path || !datasets[path] || !datasets[path].items.length){
+      if(catStatusEl) catStatusEl.textContent = '再生するデータがありません。';
+      return;
+    }
+    if(catStatusEl) catStatusEl.textContent = '連続再生中…';
+    catalogAbort.stop = false;
+    const d2 = Math.max(0.5, Math.min(10, Number(el.delayBetweenQs.value || settings.delayBetweenQs)));
+    for(let i=0;i<datasets[path].items.length;i++){
+      if(catalogAbort.stop){ if(catStatusEl) catStatusEl.textContent = '停止しました。'; return; }
+      await playOne(datasets[path].items[i]);
+      if(i < datasets[path].items.length-1){
+        await new Promise(r=>setTimeout(r, d2*1000));
+      }
+    }
+    if(catStatusEl) catStatusEl.textContent = '完了しました。';
+  }
+
+  // Hook buttons if present
+  if(catPlayAllEl){
+    catPlayAllEl.addEventListener('click', ()=>{
+      if(!catalogPath){ if(catStatusEl) catStatusEl.textContent = 'データセットを選択してください。'; return; }
+      playAll(catalogPath);
+    });
+  }
+  if(catStopEl){
+    catStopEl.addEventListener('click', ()=>{ catalogAbort.stop = true; });
+  }
+function start(){
     ensureDemoData();
     refreshDatasetsUI();
     initSettingsUI();
