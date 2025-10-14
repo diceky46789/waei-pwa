@@ -19,6 +19,9 @@ const Store={
     this.repeatCount=clamp(parseInt(localStorage.getItem("repeatCount")||"1"),1,10);
     this.baseVolume=clamp(parseFloat(localStorage.getItem("baseVolume")||"1.0"),0,1);
     this.boostDb=clamp(parseInt(localStorage.getItem("boostDb")||"0"),0,12);
+    // order preferences per dataset & sequential index map
+    this.orderPrefs=JSON.parse(localStorage.getItem("orderPrefs")||"{}");
+    this.seqIndexMap=JSON.parse(localStorage.getItem("seqIndexMap")||"{}");
 
     const firstSetup=async()=>{
       const rows=CSV.parse(await (await fetch("resources/builtin_problems.csv")).text());
@@ -59,7 +62,7 @@ const Store={
 
   createCollection(name){
     if(!name||this.collections[name]) return false;
-    this.collections[name]=[]; this.historyMap[name]=[]; this.currentName=name; this.persist(); return true;
+    this.collections[name]=[]; this.historyMap[name]=[]; this.currentName=name; this.persist(); try{this.resetSeqIndex(name);}catch{} return true;
   },
   renameCollection(oldName,newName){
     if(!this.collections[oldName]||!newName||this.collections[newName]) return false;
@@ -77,7 +80,7 @@ const Store={
   },
   switchCollection(name){
     if(!this.collections[name]) return false;
-    this.currentName=name; this.persist(); return true;
+    this.currentName=name; this.persist(); try{this.resetSeqIndex(name);}catch{} return true;
   },
 
   // existing settings
@@ -89,6 +92,32 @@ const Store={
   setRepeatCount(n){this.repeatCount=clamp(parseInt(n)||1,1,10);localStorage.setItem("repeatCount",this.repeatCount)},
   setBaseVolume(v){this.baseVolume=clamp(parseFloat(v)||1,0,1);localStorage.setItem("baseVolume",this.baseVolume)},
   setBoostDb(db){this.boostDb=clamp(parseInt(db)||0,0,12);localStorage.setItem("boostDb",this.boostDb)},
+
+  // --- Per-dataset order mode & sequential index ---
+  getOrderMode(name){
+    const ds = name || this.currentName;
+    const v = (this.orderPrefs||{})[ds];
+    return (v==="seq"||v==="random") ? v : "random";
+  },
+  setOrderMode(name, mode){
+    const ds = name || this.currentName;
+    if (!this.orderPrefs) this.orderPrefs = {};
+    this.orderPrefs[ds] = (mode==="seq") ? "seq" : "random";
+    localStorage.setItem("orderPrefs", JSON.stringify(this.orderPrefs));
+  },
+  getSeqIndex(name){
+    const ds = name || this.currentName;
+    return Math.max(0, parseInt((this.seqIndexMap||{})[ds]||0));
+  },
+  setSeqIndex(name, idx){
+    const ds = name || this.currentName;
+    if (!this.seqIndexMap) this.seqIndexMap = {};
+    this.seqIndexMap[ds] = Math.max(0, parseInt(idx||0));
+    localStorage.setItem("seqIndexMap", JSON.stringify(this.seqIndexMap));
+  },
+  resetSeqIndex(name){
+    this.setSeqIndex(name||this.currentName, 0);
+  },
 };
 
 // --- Voice (unchanged) ---
@@ -98,7 +127,20 @@ const AudioTTS={audio:null,ctx:null,source:null,gainNode:null,ensureAudio(){if(!
 const TTS={cancel(){WebSpeechTTS.cancel();AudioTTS.stop()},wait(ms){return new Promise(r=>setTimeout(r,ms))},async speak(text,lang){if(Store.ttsMode==="audio"){AudioTTS.setBaseVolume(Store.baseVolume);await AudioTTS.playOnce(lang,text)}else{await WebSpeechTTS.speak(text,lang)}},async seqOnce(jp,en){if(Store.ttsMode==="audio"){AudioTTS.setBaseVolume(Store.baseVolume);await AudioTTS.playOnce("ja-JP",jp);await this.wait(Store.delayJPEN*1000);await AudioTTS.playOnce("en-US",en)}else{await WebSpeechTTS.speak(jp,"ja-JP");await this.wait(Store.delayJPEN*1000);await WebSpeechTTS.speak(en,"en-US")}},async seqRepeat(jp,en,repeat){repeat=Math.max(1,Math.min(10,repeat|0));for(let i=0;i<repeat;i++){await this.seqOnce(jp,en);if(i<repeat-1)await this.wait(Store.delayNextJP*1000)}}};
 
 // --- Practice ---
-const Practice={current:null,pool:[],answer:[],pickRandom(){const arr=Store.problems;if(!arr||!arr.length){UI.showNoProblems();return}this.current=arr[Math.floor(Math.random()*arr.length)];UI.setJP(this.current.jp);this.resetTokens();UI.clearResult()},setProblemById(id){const p=(Store.problems||[]).find(x=>x.id===id);if(!p)return;this.current=p;UI.setJP(p.jp);this.resetTokens();UI.clearResult();UI.switchTab("practice")},resetTokens(){this.pool=TOKENS.tokenize(this.current.en).sort(()=>Math.random()-0.5);this.answer=[];UI.renderPool(this.pool);UI.renderAnswer(this.answer)},undo(){if(this.answer.length){const t=this.answer.pop();this.pool.push(t);UI.renderPool(this.pool);UI.renderAnswer(this.answer)}},shuffle(){this.pool=this.pool.sort(()=>Math.random()-0.5);UI.renderPool(this.pool)},tapPool(i){const [t]=this.pool.splice(i,1);this.answer.push(t);UI.renderPool(this.pool);UI.renderAnswer(this.answer)},tapAnswer(i){const [t]=this.answer.splice(i,1);this.pool.push(t);UI.renderPool(this.pool);UI.renderAnswer(this.answer)},check(){const ans=TOKENS.detokenize(this.answer);const ok=TOKENS.normalized(ans)===TOKENS.normalized(this.current.en);const rec={id:crypto.randomUUID(),problemID:this.current.id,timestamp:Date.now(),userAnswer:ans,correct:ok};Store.history=[rec,...(Store.history||[])];UI.showResult(ok,this.current.en);UI.refreshHistory();this.explain(ans,ok);if(ok&&document.getElementById("autoplayChk").checked){this.pickRandom()}},async explain(userEN,ok){UI.showExplaining(true);const key=Store.apiKey;if(!key){UI.setExplanation("（APIキー未設定のため、解説自動生成はスキップ）");UI.showExplaining(false);return}try{const prompt=`あなたは英語学習者向けに、語順の理由を日本語でわかりやすく解説する先生です。\\n日本文: ${this.current.jp}\\n正解の英語: ${this.current.en}\\nユーザーの英語: ${userEN}`;const resp=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:{"Authorization":`Bearer ${key}`,"Content-Type":"application/json"},body:JSON.stringify({model:"gpt-4.1-mini",input:[{role:"user",content:prompt}],temperature:0.2})});if(!resp.ok)throw new Error(await resp.text());const data=await resp.json();let text="";if(data?.output?.content)text=data.output.content.map(c=>c.text||"").join("\\n").trim();else if(data?.choices?.[0]?.message?.content)text=data.choices[0].message.content;UI.setExplanation(text||"（解説なし）")}catch(e){UI.setExplanation("解説の取得に失敗しました: "+e.message)}finally{UI.showExplaining(false)}}};
+const Practice={
+  pickSequential(){
+    const arr = Store.problems;
+    if(!arr || !arr.length){ UI.showNoProblems(); return }
+    let idx = Store.getSeqIndex();
+    if (idx >= arr.length) idx = 0;
+    const p = arr[idx];
+    if (!p){ UI.showNoProblems(); return }
+    if (typeof this.setProblemById === 'function') { this.setProblemById(p.id); }
+    else { this.current = p; UI.setJP(p.jp); UI.setEN(p.en); this.resetTokens(); }
+    Store.setSeqIndex(Store.currentName, idx+1);
+  },
+  pickNext(){ const mode = Store.getOrderMode(); if (mode==='seq') return this.pickSequential(); return this.pickRandom(); },
+current:null,pool:[],answer:[],pickRandom(){const arr=Store.problems;if(!arr||!arr.length){UI.showNoProblems();return}this.current=arr[Math.floor(Math.random()*arr.length)];UI.setJP(this.current.jp);this.resetTokens();UI.clearResult()},setProblemById(id){const p=(Store.problems||[]).find(x=>x.id===id);if(!p)return;this.current=p;UI.setJP(p.jp);this.resetTokens();UI.clearResult();UI.switchTab("practice")},resetTokens(){this.pool=TOKENS.tokenize(this.current.en).sort(()=>Math.random()-0.5);this.answer=[];UI.renderPool(this.pool);UI.renderAnswer(this.answer)},undo(){if(this.answer.length){const t=this.answer.pop();this.pool.push(t);UI.renderPool(this.pool);UI.renderAnswer(this.answer)}},shuffle(){this.pool=this.pool.sort(()=>Math.random()-0.5);UI.renderPool(this.pool)},tapPool(i){const [t]=this.pool.splice(i,1);this.answer.push(t);UI.renderPool(this.pool);UI.renderAnswer(this.answer)},tapAnswer(i){const [t]=this.answer.splice(i,1);this.pool.push(t);UI.renderPool(this.pool);UI.renderAnswer(this.answer)},check(){const ans=TOKENS.detokenize(this.answer);const ok=TOKENS.normalized(ans)===TOKENS.normalized(this.current.en);const rec={id:crypto.randomUUID(),problemID:this.current.id,timestamp:Date.now(),userAnswer:ans,correct:ok};Store.history=[rec,...(Store.history||[])];UI.showResult(ok,this.current.en);UI.refreshHistory();this.explain(ans,ok);if(ok&&document.getElementById("autoplayChk").checked){this.pickRandom()}},async explain(userEN,ok){UI.showExplaining(true);const key=Store.apiKey;if(!key){UI.setExplanation("（APIキー未設定のため、解説自動生成はスキップ）");UI.showExplaining(false);return}try{const prompt=`あなたは英語学習者向けに、語順の理由を日本語でわかりやすく解説する先生です。\\n日本文: ${this.current.jp}\\n正解の英語: ${this.current.en}\\nユーザーの英語: ${userEN}`;const resp=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:{"Authorization":`Bearer ${key}`,"Content-Type":"application/json"},body:JSON.stringify({model:"gpt-4.1-mini",input:[{role:"user",content:prompt}],temperature:0.2})});if(!resp.ok)throw new Error(await resp.text());const data=await resp.json();let text="";if(data?.output?.content)text=data.output.content.map(c=>c.text||"").join("\\n").trim();else if(data?.choices?.[0]?.message?.content)text=data.choices[0].message.content;UI.setExplanation(text||"（解説なし）")}catch(e){UI.setExplanation("解説の取得に失敗しました: "+e.message)}finally{UI.showExplaining(false)}}};
 
 // --- List auto player (unchanged) ---
 const ListAuto={abort:false,stop(){this.abort=true;TTS.cancel();UI.clearPlaying()},async playItemsJPEN(items,container){this.abort=false;for(const it of items){if(this.abort)break;UI.setPlaying(container,it.id);const{jp,en}=it;if(!jp||!en)continue;await TTS.seqRepeat(jp,en,Store.repeatCount);if(this.abort)break;await TTS.wait(Store.delayNextJP*1000)}UI.clearPlaying()}};
@@ -117,6 +159,18 @@ const UI={els:{},lastProblems:[],lastHistory:[],_playingEl:null,
     });
     // Dataset controls
     this.els.dsSelect=document.getElementById("datasetSelect");
+    try{
+      const dsSel = this.els.dsSelect;
+      const sel = document.createElement("select"); sel.id="orderMode"; sel.title="出題順序";
+      sel.innerHTML = '<option value="random">ランダム</option><option value="seq">CSV順</option>';
+      sel.style.marginLeft="6px";
+      dsSel && dsSel.parentElement && dsSel.parentElement.insertBefore(sel, dsSel.nextSibling);
+      const syncOrderUI = ()=>{ sel.value = Store.getOrderMode(); };
+      syncOrderUI();
+      sel.addEventListener("change", ()=>{ Store.setOrderMode(Store.currentName, sel.value); });
+      dsSel && dsSel.addEventListener("change", ()=>{ setTimeout(syncOrderUI,0); });
+    }catch(e){ console.warn("order mode UI inject failed", e); }
+
     document.getElementById("addDatasetBtn").onclick=()=>{
       const name=prompt("新しいデータセット名を入力");
       if(!name)return;
@@ -159,7 +213,7 @@ const UI={els:{},lastProblems:[],lastHistory:[],_playingEl:null,
     document.getElementById("resetBtn").onclick=()=>Practice.resetTokens();
     document.getElementById("shuffleBtn").onclick=()=>Practice.shuffle();
     document.getElementById("checkBtn").onclick=()=>Practice.check();
-    document.getElementById("nextBtn").onclick=()=>Practice.pickRandom();
+    document.getElementById("nextBtn").onclick=()=>Practice.pickNext();
     document.getElementById("speakJPBtn").onclick=async()=>{ListAuto.stop();await TTS.speak(Practice.current.jp,"ja-JP")};
     document.getElementById("speakENBtn").onclick=async()=>{ListAuto.stop();await TTS.speak(Practice.current.en,"en-US")};
     document.getElementById("speakSeqBtn").onclick=async()=>{ListAuto.stop();await TTS.seqRepeat(Practice.current.jp,Practice.current.en,Store.repeatCount)};
