@@ -98,14 +98,7 @@ const AudioTTS={audio:null,ctx:null,source:null,gainNode:null,ensureAudio(){if(!
 const TTS={cancel(){WebSpeechTTS.cancel();AudioTTS.stop()},wait(ms){return new Promise(r=>setTimeout(r,ms))},async speak(text,lang){if(Store.ttsMode==="audio"){AudioTTS.setBaseVolume(Store.baseVolume);await AudioTTS.playOnce(lang,text)}else{await WebSpeechTTS.speak(text,lang)}},async seqOnce(jp,en){if(Store.ttsMode==="audio"){AudioTTS.setBaseVolume(Store.baseVolume);await AudioTTS.playOnce("ja-JP",jp);await this.wait(Store.delayJPEN*1000);await AudioTTS.playOnce("en-US",en)}else{await WebSpeechTTS.speak(jp,"ja-JP");await this.wait(Store.delayJPEN*1000);await WebSpeechTTS.speak(en,"en-US")}},async seqRepeat(jp,en,repeat){repeat=Math.max(1,Math.min(10,repeat|0));for(let i=0;i<repeat;i++){await this.seqOnce(jp,en);if(i<repeat-1)await this.wait(Store.delayNextJP*1000)}}};
 
 // --- Practice ---
-const Practice={current:null,pool:[],answer:[],pickRandom(){const arr=Store.problems;if(!arr||!arr.length){UI.showNoProblems();return}this.current=arr[Math.floor(Math.random()*arr.length)];UI.setJP(this.current.jp);this.resetTokens();UI.clearResult()},setProblemById(id){const p=(Store.problems||[]).find(x=>x.id===id);if(!p)return;this.current=p;UI.setJP(p.jp);this.resetTokens();UI.clearResult();UI.switchTab("practice")},resetTokens(){this.pool=TOKENS.tokenize(this.current.en).sort(()=>Math.random()-0.5);this.answer=[];UI.renderPool(this.pool);UI.renderAnswer(this.answer)},undo(){if(this.answer.length){const t=this.answer.pop();this.pool.push(t);UI.renderPool(this.pool);UI.renderAnswer(this.answer)}},shuffle(){this.pool=this.pool.sort(()=>Math.random()-0.5);UI.renderPool(this.pool)},tapPool(i){const [t]=this.pool.splice(i,1);this.answer.push(t);UI.renderPool(this.pool);UI.renderAnswer(this.answer)},tapAnswer(i){const [t]=this.answer.splice(i,1);this.pool.push(t);UI.renderPool(this.pool);UI.renderAnswer(this.answer)},check(){const ans=TOKENS.detokenize(this.answer);const ok=TOKENS.normalized(ans)===TOKENS.normalized(this.current.en);const rec={id:crypto.randomUUID(),problemID:this.current.id,timestamp:Date.now(),userAnswer:ans,correct:ok};Store.history=[rec,...(Store.history||[])];UI.showResult(ok,this.current.en);UI.refreshHistory();this.explain(ans,ok);if(ok&&document.getElementById("autoplayChk").checked){this.pickRandom()}},async explain(userEN,ok){
-      // OFFLINE: show CSV explanation only
-      try {
-        const cur = this.current;
-        const ex = (cur && (cur.ex || cur.explanation)) ? (cur.ex || cur.explanation) : "";
-        if (typeof UI !== 'undefined' && typeof UI.setExplanation === 'function') {
-          UI.setExplanation(ex || "（解説なし）");
-        }
+const Practice={current:null,pool:[],answer:[],pickRandom(){const arr=Store.problems;if(!arr||!arr.length){UI.showNoProblems();return}this.current=arr[Math.floor(Math.random()*arr.length)];UI.setJP(this.current.jp);this.resetTokens();UI.clearResult()},setProblemById(id){const p=(Store.problems||[]).find(x=>x.id===id);if(!p)return;this.current=p;UI.setJP(p.jp);this.resetTokens();UI.clearResult();UI.switchTab("practice")},resetTokens(){this.pool=TOKENS.tokenize(this.current.en).sort(()=>Math.random()-0.5);this.answer=[];UI.renderPool(this.pool);UI.renderAnswer(this.answer)},undo(){if(this.answer.length){const t=this.answer.pop();this.pool.push(t);UI.renderPool(this.pool);UI.renderAnswer(this.answer)}},shuffle(){this.pool=this.pool.sort(()=>Math.random()-0.5);UI.renderPool(this.pool)},tapPool(i){const [t]=this.pool.splice(i,1);this.answer.push(t);UI.renderPool(this.pool);UI.renderAnswer(this.answer)},tapAnswer(i){const [t]=this.answer.splice(i,1);this.pool.push(t);UI.renderPool(this.pool);UI.renderAnswer(this.answer)},check(){const ans=TOKENS.detokenize(this.answer);const ok=TOKENS.normalized(ans)===TOKENS.normalized(this.current.en);const rec={id:crypto.randomUUID(),problemID:this.current.id,timestamp:Date.now(),userAnswer:ans,correct:ok};Store.history=[rec,...(Store.history||[])];UI.showResult(ok,this.current.en);UI.refreshHistory();this.explain(ans,ok);if(ok&&document.getElementById("autoplayChk").checked){this.pickRandom()}},async explain(userEN,ok){try{const cur=this.current||{};let ex="";if(cur&&typeof cur==="object"){ex=cur.ex||cur.explanation||"";}if((!ex||!ex.trim())&&cur.id!=null&&Array.isArray(Store.problems)){const hit=Store.problems.find(x=>x&&x.id===cur.id);if(hit){ex=hit.ex||hit.explanation||"";}}if((!ex||!ex.trim())&&Array.isArray(Store.problems)){const hit2=Store.problems.find(x=>x&&x.jp===cur.jp&&x.en===cur.en);if(hit2){ex=hit2.ex||hit2.explanation||"";}}if(typeof UI!=='undefined'&&typeof UI.setExplanation==='function'){UI.setExplanation((ex&&ex.trim())?ex:"（解説なし）");}}catch(e){if(typeof UI!=='undefined'&&typeof UI.setExplanation==='function'){UI.setExplanation("（解説なし）");}}}
       } catch (e) {
         if (typeof UI !== 'undefined' && typeof UI.setExplanation === 'function') {
           UI.setExplanation("（解説なし）");
@@ -462,86 +455,4 @@ window.addEventListener("DOMContentLoaded",()=>UI.init());
   };
   if(document.readyState==='complete'||document.readyState==='interactive') injectPrev();
   else document.addEventListener('DOMContentLoaded',injectPrev);
-})();
-
-// --- CSV Order Mode Addon (per-dataset) ---
-;(()=>{
-  const Order = {
-    keyMode: 'orderMap',
-    keyPos: 'seqPosMap',
-    getMode(name){ try{ const m=JSON.parse(localStorage.getItem(this.keyMode)||'{}'); return (m&&m[name])||'random'; }catch(e){ return 'random'; } },
-    setMode(name,mode){ try{ const m=JSON.parse(localStorage.getItem(this.keyMode)||'{}'); m[name]=mode; localStorage.setItem(this.keyMode, JSON.stringify(m)); }catch(e){} },
-    getPos(name){ try{ const p=JSON.parse(localStorage.getItem(this.keyPos)||'{}'); return p&&typeof p[name]==='number'?p[name]:0; }catch(e){ return 0; } },
-    setPos(name,pos){ try{ const p=JSON.parse(localStorage.getItem(this.keyPos)||'{}'); p[name]=pos; localStorage.setItem(this.keyPos, JSON.stringify(p)); }catch(e){} },
-  };
-
-  // Override Practice.pickRandom to respect per-dataset order
-  const injectPicker=()=>{
-    if(typeof Practice==='undefined' || typeof Store==='undefined') return;
-    if(Practice.__orderInjected) return;
-    const orig = typeof Practice.pickRandom==='function' ? Practice.pickRandom.bind(Practice) : null;
-
-    Practice.pickRandom = function(){
-      try{
-        const name = Store.currentName;
-        const mode = Order.getMode(name);
-        if(mode==='csv'){
-          const arr = (Store.collections && Store.collections[name]) || [];
-          if(!arr.length){ if(orig) return orig(); else return; }
-          let pos = Order.getPos(name);
-          if(pos<0 || pos>=arr.length) pos = 0;
-          const p = arr[pos];
-          Order.setPos(name, pos+1);
-          if(this.setProblemById && p && p.id){ return this.setProblemById(p.id); }
-        }
-        // default: random
-        if(orig) return orig();
-      }catch(e){
-        if(orig) return orig();
-      }
-    };
-    Practice.__orderInjected = true;
-  };
-
-  // Add UI control near dataset selector
-  const injectUI=()=>{
-    try{
-      const ds = (UI && UI.els && UI.els.dsSelect) ? UI.els.dsSelect : document.getElementById('dsSelect') || document.querySelector('select[data-role="datasets"]');
-      if(!ds) return;
-      if(document.getElementById('orderModeSelect')) return;
-      const sel = document.createElement('select');
-      sel.id = 'orderModeSelect';
-      sel.title = '出題順序（このデータセットのみ）';
-      sel.style.marginLeft = '8px';
-      const optRandom = document.createElement('option'); optRandom.value='random'; optRandom.textContent='ランダム';
-      const optCsv = document.createElement('option'); optCsv.value='csv'; optCsv.textContent='CSV順';
-      sel.appendChild(optRandom); sel.appendChild(optCsv);
-      ds.parentElement.insertBefore(sel, ds.nextSibling);
-
-      const refreshSel = ()=>{
-        const name = (Store && Store.currentName) || (ds.value||'Default');
-        const mode = Order.getMode(name);
-        sel.value = (mode==='csv' ? 'csv' : 'random');
-      };
-      refreshSel();
-
-      sel.addEventListener('change', ()=>{
-        const name = (Store && Store.currentName) || ds.value;
-        Order.setMode(name, sel.value);
-        // CSV順を選んだ瞬間から先頭に戻す（誤作動防止）
-        if(sel.value==='csv') Order.setPos(name, 0);
-      });
-
-      // When dataset selection changes, update the mode UI
-      ds.addEventListener('change', ()=>refreshSel());
-
-    }catch(e){}
-  };
-
-  const boot=()=>{
-    injectPicker();
-    injectUI();
-  };
-  if(document.readyState==='complete'||document.readyState==='interactive') boot();
-  else document.addEventListener('DOMContentLoaded', boot);
 })();
