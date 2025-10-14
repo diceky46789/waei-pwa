@@ -22,13 +22,8 @@
   </nav>
 
   <main>
-    <!-- Practice Tab -->
+    <!-- Practice Tab (no dataset picker) -->
     <section id="practice" class="tab active">
-      <div class="dataset-picker">
-        <h2>データセット選択</h2>
-        <div id="datasetTree" class="tree"></div>
-      </div>
-
       <div class="controls-row">
         <button id="prevBtn" class="nav-btn">前へ</button>
         <button id="nextBtn" class="nav-btn">次へ</button>
@@ -40,7 +35,7 @@
       <div id="delaysInfo" class="hint"></div>
 
       <div id="qaArea" class="qa-area">
-        <div class="jp bold" id="jpText">（ここに日本文）</div>
+        <div class="jp bold" id="jpText">「問題」タブでデータセットを選んでください。</div>
         <div class="bank-and-answer">
           <div class="word-bank" id="wordBank" aria-label="単語候補"></div>
           <div class="answer-area" id="answerArea" aria-label="解答欄"></div>
@@ -63,12 +58,10 @@
       </div>
       <div id="uploadLog" class="log"></div>
 
-      <h3>データセット設定（順番/ランダム）</h3>
+      <h3>データセット一覧（タップで練習開始）</h3>
       <div id="datasetList" class="dataset-list"></div>
     </section>
 
-    <!-- History Tab -->
-    
     <!-- Catalog Tab -->
     <section id="catalog" class="tab">
       <h2>問題一覧（データセットの連続読み上げ）</h2>
@@ -83,6 +76,8 @@
       <div id="catalogStatus" class="hint"></div>
       <div id="catalogList" class="history-list"></div>
     </section>
+
+    <!-- History Tab -->
     <section id="history" class="tab">
       <div class="controls-row">
         <button id="clearHistBtn" class="secondary">履歴を全削除</button>

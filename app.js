@@ -1,13 +1,13 @@
-/* 和英正順アプリ - 要件対応版 */
+/* 和英正順アプリ - Practice from Problems tab */
 (function(){
   'use strict';
 
   /*** Storage Keys ***/
   const K = {
-    DATASETS: 'woa.datasets.v2',     // { path: { items:[{jp,en,ex}], mode:'ordered'|'random' } }
-    SETTINGS: 'woa.settings.v2',     // { delayJaToEn, delayBetweenQs, jaVoiceURI, enVoiceURI }
-    HISTORY:  'woa.history.v2',      // [{ts, path, idx, jp, en, ex, user, ok}...]
-    STATE:    'woa.state.v2'         // { currentPath, index }
+    DATASETS: 'woa.datasets.v2',
+    SETTINGS: 'woa.settings.v2',
+    HISTORY:  'woa.history.v2',
+    STATE:    'woa.state.v2'
   };
 
   /*** Elements ***/
@@ -16,11 +16,10 @@
     sections: {
       practice: document.getElementById('practice'),
       problems: document.getElementById('problems'),
+      catalog: document.getElementById('catalog'),
       history: document.getElementById('history'),
       settings: document.getElementById('settings')
     },
-    datasetTree: document.getElementById('datasetTree'),
-    datasetList: document.getElementById('datasetList'),
     jpText: document.getElementById('jpText'),
     wordBank: document.getElementById('wordBank'),
     answerArea: document.getElementById('answerArea'),
@@ -31,19 +30,29 @@
     nextBtn: document.getElementById('nextBtn'),
     prevBtn: document.getElementById('prevBtn'),
     speakBtn: document.getElementById('speakBtn'),
+    // Problems
     folderPath: document.getElementById('folderPath'),
     csvFiles: document.getElementById('csvFiles'),
     uploadCsvBtn: document.getElementById('uploadCsvBtn'),
     uploadLog: document.getElementById('uploadLog'),
+    datasetList: document.getElementById('datasetList'),
+    // History
     clearHistBtn: document.getElementById('clearHistBtn'),
     historyList: document.getElementById('historyList'),
+    // Settings
     delayJaToEn: document.getElementById('delayJaToEn'),
     delayBetweenQs: document.getElementById('delayBetweenQs'),
     jaVoice: document.getElementById('jaVoice'),
     enVoice: document.getElementById('enVoice'),
     saveSettingsBtn: document.getElementById('saveSettingsBtn'),
     settingsSaved: document.getElementById('settingsSaved'),
-    delaysInfo: document.getElementById('delaysInfo')
+    delaysInfo: document.getElementById('delaysInfo'),
+    // Catalog tab
+    catalogTree: document.getElementById('catalogTree'),
+    catalogList: document.getElementById('catalogList'),
+    catalogPlayAll: document.getElementById('catalogPlayAll'),
+    catalogStop: document.getElementById('catalogStop'),
+    catalogStatus: document.getElementById('catalogStatus')
   };
 
   /*** State ***/
@@ -53,12 +62,8 @@
   let state = Object.assign({currentPath:null, index:0}, load(K.STATE) || {});
   let orderCache = {}; // cache of current randomized order per path
 
-  function save(key, value){
-    localStorage.setItem(key, JSON.stringify(value));
-  }
-  function load(key){
-    try { return JSON.parse(localStorage.getItem(key)); } catch(e){ return null; }
-  }
+  function save(key, value){ localStorage.setItem(key, JSON.stringify(value)); }
+  function load(key){ try { return JSON.parse(localStorage.getItem(key)); } catch(e){ return null; } }
 
   /*** Tabs ***/
   document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -70,81 +75,7 @@
     });
   });
 
-  /*** Dataset Tree ***/
-  function buildTree(paths){
-    const root = {};
-    for(const p of paths){
-      const parts = p.split('/').filter(Boolean);
-      let node = root;
-      for(let i=0;i<parts.length;i++){
-        const part = parts[i];
-        node[part] = node[part] || {__children__: {}, __full__: parts.slice(0,i+1).join('/')};
-        node = node[part].__children__;
-      }
-    }
-    return root;
-  }
-  function renderTree(container, tree, prefix=''){
-    container.innerHTML = '';
-    function walk(node, parentEl){
-      for(const name of Object.keys(node).sort()){
-        const n = node[name];
-        const item = document.createElement('div');
-        item.className = 'tree-item';
-        item.textContent = name;
-        item.dataset.path = n.__full__;
-        parentEl.appendChild(item);
-        item.addEventListener('click', ()=>{
-          state.currentPath = item.dataset.path;
-          state.index = 0;
-          save(K.STATE, state);
-          orderCache[state.currentPath] = null; // reset order
-          loadCurrentQuestion();
-          highlightCurrentPath();
-        });
-        const children = n.__children__;
-        if(children && Object.keys(children).length){
-          const folder = document.createElement('div');
-          folder.className = 'tree-folder';
-          parentEl.appendChild(folder);
-          walk(children, folder);
-        }
-      }
-    }
-    walk(tree, container);
-    highlightCurrentPath();
-  }
-  function highlightCurrentPath(){
-    Array.from(document.querySelectorAll('.tree-item')).forEach(elm => {
-      if(elm.dataset.path === state.currentPath) elm.style.background = '#e8f0ff';
-      else elm.style.background = '';
-    });
-  }
-
-  /*** Dataset List (order settings) ***/
-  function renderDatasetList(){
-    el.datasetList.innerHTML = '';
-    Object.keys(datasets).sort().forEach(path => {
-      const row = document.createElement('div');
-      row.className = 'row';
-      const pathSpan = document.createElement('div');
-      pathSpan.className = 'path';
-      pathSpan.textContent = path + `（${datasets[path].items.length}問）`;
-      const sel = document.createElement('select');
-      sel.innerHTML = '<option value="ordered">順番通り</option><option value="random">ランダム</option>';
-      sel.value = datasets[path].mode || 'ordered';
-      sel.addEventListener('change', ()=>{
-        datasets[path].mode = sel.value;
-        save(K.DATASETS, datasets);
-        orderCache[path] = null;
-      });
-      row.appendChild(pathSpan);
-      row.appendChild(sel);
-      el.datasetList.appendChild(row);
-    });
-  }
-
-  /*** CSV Parser (RFC4180-ish) ***/
+  /*** CSV Parser ***/
   function parseCSV(text){
     const rows = [];
     let i=0, field='', row=[], inQuotes=false;
@@ -170,11 +101,9 @@
 
   /*** Tokenization ***/
   function tokenize(en){
-    // Split by space but keep punctuation as separate tokens
     const tokens = [];
     const parts = en.trim().split(/\s+/);
     for(const part of parts){
-      // Separate trailing punctuation , . ! ? ; :
       const m = part.match(/^(.+?)([,.!?;:])?$/);
       if(m){
         const w = m[1];
@@ -186,99 +115,16 @@
     }
     return tokens;
   }
-
-  /*** Build Bank/Answer ***/
-  function shuffle(arr){
-    const a = arr.slice();
-    for(let i=a.length-1;i>0;i--){
-      const j = Math.floor(Math.random()*(i+1));
-      [a[i],a[j]] = [a[j],a[i]];
-    }
-    return a;
-  }
-
-  function clearQA(){
-    el.wordBank.innerHTML='';
-    el.answerArea.innerHTML='';
-    el.resultBox.textContent='';
-    el.resultBox.className='result';
-    el.explainBox.textContent='';
-  }
-
-  /*** Drag & Drop (mobile friendly via pointer events) ***/
-  let dragInfo = null;
-  function makeDraggable(tokenEl){
-    tokenEl.addEventListener('pointerdown', (ev)=>{
-      tokenEl.setPointerCapture(ev.pointerId);
-      dragInfo = { el: tokenEl, originParent: tokenEl.parentElement, isBank: tokenEl.classList.contains('bank'), startX: ev.clientX, startY: ev.clientY };
-      tokenEl.classList.add('dragging');
-    });
-    tokenEl.addEventListener('pointermove', (ev)=>{
-      if(!dragInfo || dragInfo.el!==tokenEl) return;
-      const x = ev.clientX, y = ev.clientY;
-      // find insertion position in answer area under pointer
-      const answerRect = el.answerArea.getBoundingClientRect();
-      if(x>answerRect.left && x<answerRect.right && y>answerRect.top && y<answerRect.bottom){
-        // over answer: show placeholder
-        let placed = false;
-        const children = Array.from(el.answerArea.children).filter(c=>c.classList.contains('token'));
-        for(const child of children){
-          const r = child.getBoundingClientRect();
-          if(x < r.left + r.width/2){
-            el.answerArea.insertBefore(tokenEl, child);
-            placed = true; break;
-          }
-        }
-        if(!placed) el.answerArea.appendChild(tokenEl);
-      }else{
-        // over bank?
-        const bankRect = el.wordBank.getBoundingClientRect();
-        if(x>bankRect.left && x<bankRect.right && y>bankRect.top && y<bankRect.bottom){
-          let placed=false;
-          const kids = Array.from(el.wordBank.children).filter(c=>c.classList.contains('token'));
-          for(const child of kids){
-            const r = child.getBoundingClientRect();
-            if(x < r.left + r.width/2){
-              el.wordBank.insertBefore(tokenEl, child);
-              placed=true; break;
-            }
-          }
-          if(!placed) el.wordBank.appendChild(tokenEl);
-        }
-      }
-    });
-    tokenEl.addEventListener('pointerup', ()=>{
-      if(dragInfo && dragInfo.el===tokenEl){
-        tokenEl.classList.remove('dragging');
-        dragInfo = null;
-      }
-    });
-  }
-
-  function createToken(text, cls){
-    const t = document.createElement('button');
-    t.type = 'button';
-    t.className = 'token ' + cls;
-    t.textContent = text;
-    // tap to move between bank <-> answer
-    t.addEventListener('click', ()=>{
-      if(t.parentElement === el.wordBank) el.answerArea.appendChild(t);
-      else el.wordBank.appendChild(t);
-    });
-    makeDraggable(t);
-    return t;
-  }
+  function shuffle(arr){ const a = arr.slice(); for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
 
   /*** Voices ***/
   let availableVoices = [];
-  function loadVoices(){
-    availableVoices = speechSynthesis.getVoices();
-    populateVoiceSelects();
-  }
+  function loadVoices(){ availableVoices = speechSynthesis.getVoices(); populateVoiceSelects(); }
   function populateVoiceSelects(){
     const jaOpts = availableVoices.filter(v => /ja/i.test(v.lang));
     const enOpts = availableVoices.filter(v => /^en[-_]/i.test(v.lang));
     function fill(select, list, savedURI){
+      if(!select) return;
       select.innerHTML = '';
       list.forEach(v => {
         const opt = document.createElement('option');
@@ -286,9 +132,7 @@
         opt.textContent = `${v.name} (${v.lang})`;
         select.appendChild(opt);
       });
-      if(savedURI){
-        select.value = savedURI;
-      }
+      if(savedURI){ select.value = savedURI; }
     }
     fill(el.jaVoice, jaOpts, settings.jaVoiceURI);
     fill(el.enVoice, enOpts, settings.enVoiceURI);
@@ -297,7 +141,6 @@
     loadVoices();
     window.speechSynthesis.onvoiceschanged = loadVoices;
   }
-
   function say(text, lang, uri){
     return new Promise(resolve => {
       const u = new SpeechSynthesisUtterance(text);
@@ -311,31 +154,17 @@
     });
   }
 
-  async function speakCurrent(){
-    const item = getCurrentItem();
-    if(!item) return;
-    const d1 = Math.max(0.5, Math.min(10, Number(el.delayJaToEn.value || settings.delayJaToEn)));
-    const jp = item.jp;
-    const en = item.en;
-    await say(jp, 'ja-JP', settings.jaVoiceURI || el.jaVoice.value);
-    await new Promise(r=>setTimeout(r, d1*1000));
-    await say(en, 'en-US', settings.enVoiceURI || el.enVoice.value);
-  }
-
-  /*** Ordering ***/
+  /*** Ordering & Current ***/
   function getOrder(path){
     const ds = datasets[path];
     if(!ds) return [];
     if(ds.mode==='random'){
-      if(!orderCache[path]){
-        orderCache[path] = shuffle([...Array(ds.items.length).keys()]);
-      }
+      if(!orderCache[path]){ orderCache[path] = shuffle([...Array(ds.items.length).keys()]); }
       return orderCache[path];
     }else{
       return [...Array(ds.items.length).keys()];
     }
   }
-
   function getCurrentItem(){
     const ds = datasets[state.currentPath];
     if(!ds || !ds.items.length) return null;
@@ -344,11 +173,18 @@
     return Object.assign({__realIndex: idx}, ds.items[idx]);
   }
 
+  function clearQA(){
+    el.wordBank.innerHTML='';
+    el.answerArea.innerHTML='';
+    el.resultBox.textContent='';
+    el.resultBox.className='result';
+    el.explainBox.textContent='';
+  }
   function loadCurrentQuestion(){
     const it = getCurrentItem();
     clearQA();
     if(!it){
-      el.jpText.textContent = 'データセットを選択してください。';
+      el.jpText.textContent = '「問題」タブでデータセットを選んでください。';
       return;
     }
     el.jpText.textContent = it.jp;
@@ -360,21 +196,57 @@
     el.delaysInfo.textContent = `現在の遅延設定: 日→英 ${settings.delayJaToEn}s, 次の問題まで ${settings.delayBetweenQs}s`;
   }
 
-  function nextQuestion(){
-    const ds = datasets[state.currentPath];
-    if(!ds) return;
-    const ord = getOrder(state.currentPath);
-    state.index = (state.index + 1) % ord.length;
-    save(K.STATE, state);
-    loadCurrentQuestion();
+  /*** Drag & Drop + Tap move ***/
+  let dragInfo = null;
+  function makeDraggable(tokenEl){
+    tokenEl.addEventListener('pointerdown', (ev)=>{
+      tokenEl.setPointerCapture(ev.pointerId);
+      dragInfo = { el: tokenEl, originParent: tokenEl.parentElement, startX: ev.clientX, startY: ev.clientY };
+      tokenEl.classList.add('dragging');
+    });
+    tokenEl.addEventListener('pointermove', (ev)=>{
+      if(!dragInfo || dragInfo.el!==tokenEl) return;
+      const x = ev.clientX, y = ev.clientY;
+      const answerRect = el.answerArea.getBoundingClientRect();
+      if(x>answerRect.left && x<answerRect.right && y>answerRect.top && y<answerRect.bottom){
+        let placed = false;
+        const children = Array.from(el.answerArea.children).filter(c=>c.classList.contains('token'));
+        for(const child of children){
+          const r = child.getBoundingClientRect();
+          if(x < r.left + r.width/2){ el.answerArea.insertBefore(tokenEl, child); placed = true; break; }
+        }
+        if(!placed) el.answerArea.appendChild(tokenEl);
+      }else{
+        const bankRect = el.wordBank.getBoundingClientRect();
+        if(x>bankRect.left && x<bankRect.right && y>bankRect.top && y<bankRect.bottom){
+          let placed=false;
+          const kids = Array.from(el.wordBank.children).filter(c=>c.classList.contains('token'));
+          for(const child of kids){
+            const r = child.getBoundingClientRect();
+            if(x < r.left + r.width/2){ el.wordBank.insertBefore(tokenEl, child); placed=true; break; }
+          }
+          if(!placed) el.wordBank.appendChild(tokenEl);
+        }
+      }
+    });
+    tokenEl.addEventListener('pointerup', ()=>{
+      if(dragInfo && dragInfo.el===tokenEl){
+        tokenEl.classList.remove('dragging');
+        dragInfo = null;
+      }
+    });
   }
-  function prevQuestion(){
-    const ds = datasets[state.currentPath];
-    if(!ds) return;
-    const ord = getOrder(state.currentPath);
-    state.index = (state.index - 1 + ord.length) % ord.length;
-    save(K.STATE, state);
-    loadCurrentQuestion();
+  function createToken(text, cls){
+    const t = document.createElement('button');
+    t.type = 'button';
+    t.className = 'token ' + cls;
+    t.textContent = text;
+    t.addEventListener('click', ()=>{
+      if(t.parentElement === el.wordBank) el.answerArea.appendChild(t);
+      else el.wordBank.appendChild(t);
+    });
+    makeDraggable(t);
+    return t;
   }
 
   /*** Swipe Navigation ***/
@@ -401,30 +273,37 @@
     }, {passive:true});
   })();
 
-  /*** Check ***/
+  /*** Practice navigation & actions ***/
+  function nextQuestion(){
+    const ds = datasets[state.currentPath];
+    if(!ds) return;
+    const ord = getOrder(state.currentPath);
+    state.index = (state.index + 1) % ord.length;
+    save(K.STATE, state);
+    loadCurrentQuestion();
+  }
+  function prevQuestion(){
+    const ds = datasets[state.currentPath];
+    if(!ds) return;
+    const ord = getOrder(state.currentPath);
+    state.index = (state.index - 1 + ord.length) % ord.length;
+    save(K.STATE, state);
+    loadCurrentQuestion();
+  }
   function getAnswerText(){
     const words = Array.from(el.answerArea.querySelectorAll('.token')).map(t=>t.textContent);
     return words.join(' ').replace(/\s+([,.!?;:])/g,'$1').trim();
   }
-  function normalize(s){
-    return s.replace(/\s+/g,' ').trim();
-  }
+  function normalize(s){ return s.replace(/\s+/g,' ').trim(); }
 
   function pushHistory(item, user, ok){
-    history.unshift({
-      ts: Date.now(),
-      path: state.currentPath,
-      idx: item.__realIndex,
-      jp: item.jp, en: item.en, ex: item.ex,
-      user, ok
-    });
+    history.unshift({ ts: Date.now(), path: state.currentPath, idx: item.__realIndex, jp: item.jp, en: item.en, ex: item.ex, user, ok });
     history = history.slice(0, 1000);
     save(K.HISTORY, history);
   }
-
   function renderHistory(){
     el.historyList.innerHTML = '';
-    history.forEach((h,i)=>{
+    history.forEach((h)=>{
       const con = document.createElement('div');
       con.className = 'hist-item';
       const top = document.createElement('div');
@@ -440,7 +319,6 @@
       again.addEventListener('click', ()=>{
         state.currentPath = h.path;
         const ord = getOrder(h.path);
-        // find position of __realIndex within current order
         const pos = ord.indexOf(h.idx);
         state.index = Math.max(0, pos);
         save(K.STATE, state);
@@ -454,10 +332,8 @@
         await new Promise(r=>setTimeout(r, Math.max(0.5, settings.delayJaToEn)*1000));
         await say(h.en, 'en-US', settings.enVoiceURI || el.enVoice.value);
       });
-      actions.appendChild(again);
-      actions.appendChild(speak);
-      top.appendChild(title);
-      top.appendChild(actions);
+      actions.appendChild(again); actions.appendChild(speak);
+      top.appendChild(title); top.appendChild(actions);
       const jp = document.createElement('div'); jp.textContent = h.jp; jp.className='bold';
       const en = document.createElement('div'); en.textContent = h.en;
       const user = document.createElement('div'); user.textContent = 'あなたの解答: ' + (h.user || '(未入力)');
@@ -466,21 +342,26 @@
       el.historyList.appendChild(con);
     });
   }
-
   function switchTo(tabName){
-    document.querySelectorAll('.tab-btn').forEach(b=>{
-      b.classList.toggle('active', b.dataset.tab===tabName);
-    });
-    document.querySelectorAll('.tab').forEach(sec=>{
-      sec.classList.toggle('active', sec.id===tabName);
-    });
+    document.querySelectorAll('.tab-btn').forEach(b=>{ b.classList.toggle('active', b.dataset.tab===tabName); });
+    document.querySelectorAll('.tab').forEach(sec=>{ sec.classList.toggle('active', sec.id===tabName); });
   }
 
   /*** Event bindings ***/
   el.nextBtn.addEventListener('click', nextQuestion);
   el.prevBtn.addEventListener('click', prevQuestion);
   el.resetBtn.addEventListener('click', loadCurrentQuestion);
-  el.speakBtn.addEventListener('click', speakCurrent);
+  el.speakBtn.addEventListener('click', async ()=>{
+    const item = getCurrentItem();
+    if(!item) return;
+    const d1 = Math.max(0.5, Math.min(10, Number(el.delayJaToEn.value || settings.delayJaToEn)));
+    const d2 = Math.max(0.5, Math.min(10, Number(el.delayBetweenQs.value || settings.delayBetweenQs)));
+    await say(item.jp, 'ja-JP', settings.jaVoiceURI || el.jaVoice.value);
+    await new Promise(r=>setTimeout(r, d1*1000));
+    await say(item.en, 'en-US', settings.enVoiceURI || el.enVoice.value);
+    // 読み上げ時のみ自動で次の問題へ（d2秒後）
+    setTimeout(()=>{ nextQuestion(); }, d2*1000);
+  });
   el.checkBtn.addEventListener('click', ()=>{
     const it = getCurrentItem();
     if(!it) return;
@@ -491,17 +372,10 @@
     el.explainBox.textContent = `正解: ${it.en}\n\n解説:\n${it.ex || '(なし)'}`;
     pushHistory(it, user, ok);
     renderHistory();
-setTimeout(()=>{ nextQuestion(); }, d2*1000);
   });
-
   el.clearHistBtn.addEventListener('click', ()=>{
-    if(confirm('履歴を全て削除しますか？')){
-      history = [];
-      save(K.HISTORY, history);
-      renderHistory();
-    }
+    if(confirm('履歴を全て削除しますか？')){ history = []; save(K.HISTORY, history); renderHistory(); }
   });
-
   el.saveSettingsBtn.addEventListener('click', ()=>{
     settings.delayJaToEn = Math.max(0.5, Math.min(10, Number(el.delayJaToEn.value)));
     settings.delayBetweenQs = Math.max(0.5, Math.min(10, Number(el.delayBetweenQs.value)));
@@ -513,7 +387,7 @@ setTimeout(()=>{ nextQuestion(); }, d2*1000);
     el.delaysInfo.textContent = `現在の遅延設定: 日→英 ${settings.delayJaToEn}s, 次の問題まで ${settings.delayBetweenQs}s`;
   });
 
-  /*** CSV Upload ***/
+  /*** Upload & Dataset list ***/
   el.uploadCsvBtn.addEventListener('click', async ()=>{
     const files = el.csvFiles.files;
     const folder = (el.folderPath.value || '').trim().replace(/^\/+|\/+$/g,'');
@@ -522,12 +396,8 @@ setTimeout(()=>{ nextQuestion(); }, d2*1000);
     for(const file of files){
       const text = await file.text();
       const rows = parseCSV(text);
-      // remove empty rows
       const rows2 = rows.filter(r=> r.join('').trim().length>0 );
-      // header detection
-      if(rows2.length && rows2[0].length>=2 && /jp/i.test(rows2[0][0]) && /en/i.test(rows2[0][1])){
-        rows2.shift();
-      }
+      if(rows2.length && rows2[0].length>=2 && /jp/i.test(rows2[0][0]) && /en/i.test(rows2[0][1])){ rows2.shift(); }
       const items = rows2.map(r=>({ jp: r[0]||'', en: r[1]||'', ex: r[2]||'' })).filter(x=>x.jp && x.en);
       const dsPath = (folder? folder + '/':'') + file.name.replace(/\.csv$/i,'');
       datasets[dsPath] = datasets[dsPath] || {items:[], mode:'ordered'};
@@ -539,47 +409,50 @@ setTimeout(()=>{ nextQuestion(); }, d2*1000);
     refreshDatasetsUI();
   });
 
+  function renderDatasetList(){
+    el.datasetList.innerHTML = '';
+    Object.keys(datasets).sort().forEach(path => {
+      const row = document.createElement('div');
+      row.className = 'row';
+      const pathSpan = document.createElement('div');
+      pathSpan.className = 'path';
+      pathSpan.textContent = path + `（${datasets[path].items.length}問）`;
+      const sel = document.createElement('select');
+      sel.innerHTML = '<option value="ordered">順番通り</option><option value="random">ランダム</option>';
+      sel.value = datasets[path].mode || 'ordered';
+      sel.addEventListener('change', ()=>{
+        datasets[path].mode = sel.value;
+        save(K.DATASETS, datasets);
+        orderCache[path] = null;
+      });
+      const go = document.createElement('button');
+      go.textContent = 'このセットで練習';
+      function startPractice(){
+        state.currentPath = path;
+        state.index = 0;
+        save(K.STATE, state);
+        orderCache[path] = null;
+        switchTo('practice');
+        loadCurrentQuestion();
+      }
+      go.addEventListener('click', startPractice);
+      pathSpan.addEventListener('click', startPractice);
+      row.appendChild(pathSpan);
+      row.appendChild(sel);
+      row.appendChild(go);
+      el.datasetList.appendChild(row);
+    });
+  }
   function refreshDatasetsUI(){
-    try{ renderCatalogTree(); }catch(e){}
-
     const paths = Object.keys(datasets);
     renderDatasetList();
-    renderTree(el.datasetTree, buildTree(paths));
+    try{ renderCatalogTree(); }catch(e){}
   }
 
-  /*** Init UI ***/
-  function initSettingsUI(){
-    el.delayJaToEn.value = settings.delayJaToEn;
-    el.delayBetweenQs.value = settings.delayBetweenQs;
-  }
-
-  function ensureDemoData(){
-    if(Object.keys(datasets).length) return;
-    datasets["デモ/医療/ALT基礎"] = {
-      mode: 'ordered',
-      items: [
-        {jp:"皮弁は安定した血管茎で一貫した血流を持ちます。", en:"The flap has consistent blood flow with a stable vascular pedicle.", ex:"consistent blood flow=一定の血流。vascular pedicle=血管茎。with a ... pedicle=付帯状況を表すwith句。"},
-        {jp:"皮弁は乳房の自然な円錐形に合わせて整形できます。", en:"The flap can be shaped to mimic the natural conical form of the breast.", ex:"can be shaped=受動態。mimic=模倣する。conical form=円錐形。"},
-        {jp:"涙液は涙腺で産生され、眼表面に分泌されます。", en:"Tears are produced by the lacrimal glands and secreted onto the ocular surface.", ex:"be produced by=受動態。lacrimal glands=涙腺。onto the ocular surface=眼表面へ。"}
-      ]
-    };
-    save(K.DATASETS, datasets);
-  }
-
-  
   /*** Catalog (問題一覧) ***/
   let catalogPath = null;
   let catalogAbort = { stop:false };
-
-  // Elements for catalog (gracefully skip if not present)
-  const catTreeEl = document.getElementById('catalogTree');
-  const catListEl = document.getElementById('catalogList');
-  const catPlayAllEl = document.getElementById('catalogPlayAll');
-  const catStopEl = document.getElementById('catalogStop');
-  const catStatusEl = document.getElementById('catalogStatus');
-
   function renderCatalogTree(){
-    if(!catTreeEl) return;
     const paths = Object.keys(datasets);
     const tree = (function build(paths){
       const root = {};
@@ -594,41 +467,63 @@ setTimeout(()=>{ nextQuestion(); }, d2*1000);
       }
       return root;
     })(paths);
-    catTreeEl.innerHTML = '';
+    const container = el.catalogTree;
+    if(!container) return;
+    container.innerHTML='';
     (function walk(node, parentEl){
-      for(const name of Object.keys(node).sort()){
+      Object.keys(node).sort().forEach(name=>{
         const n = node[name];
+        const full = n.__full__;
+        const children = n.__children__;
+        const hasChildren = children && Object.keys(children).length>0;
         const item = document.createElement('div');
         item.className = 'tree-item';
-        item.textContent = name;
-        item.dataset.path = n.__full__;
-        parentEl.appendChild(item);
-        item.addEventListener('click', ()=>{
-          catalogPath = item.dataset.path;
-          Array.from(catTreeEl.querySelectorAll('.tree-item')).forEach(e=>{
-            e.style.background = (e.dataset.path===catalogPath)? '#e8f0ff':'';
-          });
-          renderCatalogList();
-        });
-        const children = n.__children__;
-        if(children && Object.keys(children).length){
+        if(hasChildren){
+          const label = document.createElement('div');
+          label.className = 'folder-label';
+          const caret = document.createElement('span');
+          caret.className = 'caret';
+          caret.textContent = '▾';
+          const text = document.createElement('span');
+          text.textContent = name;
+          label.appendChild(caret); label.appendChild(text);
+          item.appendChild(label);
+          parentEl.appendChild(item);
           const folder = document.createElement('div');
           folder.className = 'tree-folder';
           parentEl.appendChild(folder);
-          walk(children, folder);
+          (function walk2(){ Object.keys(children).sort().forEach(k=> walk(children, folder)); })();
+        }else{
+          const leaf = document.createElement('div');
+          leaf.className = 'tree-item leaf' + (datasets[full] ? '' : ' disabled');
+          leaf.textContent = name;
+          leaf.dataset.path = full;
+          parentEl.appendChild(leaf);
+          if(datasets[full]){
+            leaf.addEventListener('click', ()=>{
+              catalogPath = leaf.dataset.path;
+              highlightCatalogPath();
+              renderCatalogList();
+            });
+          }
         }
-      }
-    })(tree, catTreeEl);
+      });
+    })(tree, container);
+    highlightCatalogPath();
   }
-
+  function highlightCatalogPath(){
+    if(!el.catalogTree) return;
+    Array.from(el.catalogTree.querySelectorAll('.tree-item')).forEach(e=>{
+      e.style.background = (e.dataset.path===catalogPath)? '#e8f0ff':'';
+    });
+  }
   function renderCatalogList(){
-    if(!catListEl) return;
-    catListEl.innerHTML = '';
+    el.catalogList.innerHTML='';
     if(!catalogPath || !datasets[catalogPath]){
-      if(catStatusEl) catStatusEl.textContent = 'データセットを選択してください。';
+      el.catalogStatus.textContent = 'データセットを選択してください。';
       return;
     }
-    if(catStatusEl) catStatusEl.textContent = '';
+    el.catalogStatus.textContent = '';
     const items = datasets[catalogPath].items;
     items.forEach((it, idx)=>{
       const con = document.createElement('div');
@@ -649,59 +544,72 @@ setTimeout(()=>{ nextQuestion(); }, d2*1000);
       const jp = document.createElement('div'); jp.textContent = it.jp; jp.className='bold';
       const en = document.createElement('div'); en.textContent = it.en;
       con.appendChild(head); con.appendChild(jp); con.appendChild(en);
-      catListEl.appendChild(con);
+      el.catalogList.appendChild(con);
     });
   }
-
   async function playOne(item){
     const d1 = Math.max(0.5, Math.min(10, Number(el.delayJaToEn.value || settings.delayJaToEn)));
     await say(item.jp, 'ja-JP', settings.jaVoiceURI || el.jaVoice.value);
     await new Promise(r=>setTimeout(r, d1*1000));
     await say(item.en, 'en-US', settings.enVoiceURI || el.enVoice.value);
   }
-
   async function playAll(path){
     if(!path || !datasets[path] || !datasets[path].items.length){
-      if(catStatusEl) catStatusEl.textContent = '再生するデータがありません。';
+      el.catalogStatus.textContent = '再生するデータがありません。';
       return;
     }
-    if(catStatusEl) catStatusEl.textContent = '連続再生中…';
+    el.catalogStatus.textContent = '連続再生中…';
     catalogAbort.stop = false;
     const d2 = Math.max(0.5, Math.min(10, Number(el.delayBetweenQs.value || settings.delayBetweenQs)));
     for(let i=0;i<datasets[path].items.length;i++){
-      if(catalogAbort.stop){ if(catStatusEl) catStatusEl.textContent = '停止しました。'; return; }
+      if(catalogAbort.stop){ el.catalogStatus.textContent = '停止しました。'; return; }
       await playOne(datasets[path].items[i]);
       if(i < datasets[path].items.length-1){
         await new Promise(r=>setTimeout(r, d2*1000));
       }
     }
-    if(catStatusEl) catStatusEl.textContent = '完了しました。';
+    el.catalogStatus.textContent = '完了しました。';
   }
+  el.catalogPlayAll && el.catalogPlayAll.addEventListener('click', ()=>{
+    if(!catalogPath){ el.catalogStatus.textContent = 'データセットを選択してください。'; return; }
+    playAll(catalogPath);
+  });
+  el.catalogStop && el.catalogStop.addEventListener('click', ()=>{ catalogAbort.stop = true; });
 
-  // Hook buttons if present
-  if(catPlayAllEl){
-    catPlayAllEl.addEventListener('click', ()=>{
-      if(!catalogPath){ if(catStatusEl) catStatusEl.textContent = 'データセットを選択してください。'; return; }
-      playAll(catalogPath);
-    });
+  /*** Init ***/
+  function ensureDemoData(){
+    if(Object.keys(datasets).length) return;
+    datasets["デモ/医療/ALT基礎"] = {
+      mode: 'ordered',
+      items: [
+        {jp:"皮弁は安定した血管茎で一貫した血流を持ちます。", en:"The flap has consistent blood flow with a stable vascular pedicle.", ex:"consistent blood flow=一定の血流。vascular pedicle=血管茎。with a ... pedicle=付帯状況のwith句。"},
+        {jp:"皮弁は乳房の自然な円錐形に合わせて整形できます。", en:"The flap can be shaped to mimic the natural conical form of the breast.", ex:"can be shaped=受動態。mimic=模倣する。conical form=円錐形。"},
+        {jp:"涙液は涙腺で産生され、眼表面に分泌されます。", en:"Tears are produced by the lacrimal glands and secreted onto the ocular surface.", ex:"be produced by=受動態。lacrimal glands=涙腺。onto the ocular surface=眼表面へ。"}
+      ]
+    };
+    save(K.DATASETS, datasets);
   }
-  if(catStopEl){
-    catStopEl.addEventListener('click', ()=>{ catalogAbort.stop = true; });
+  function initSettingsUI(){
+    el.delayJaToEn.value = settings.delayJaToEn;
+    el.delayBetweenQs.value = settings.delayBetweenQs;
   }
-function start(){
-    ensureDemoData();
+  function refreshAll(){
     refreshDatasetsUI();
+    renderHistory();
+    el.delaysInfo.textContent = `現在の遅延設定: 日→英 ${settings.delayJaToEn}s, 次の問題まで ${settings.delayBetweenQs}s`;
+  }
+  function start(){
+    ensureDemoData();
     initSettingsUI();
-    // load initial if any
+    // If no dataset chosen yet, default to first dataset (so Practice works immediately)
     if(!state.currentPath){
-      state.currentPath = Object.keys(datasets)[0];
-      state.index = 0;
-      save(K.STATE, state);
+      const first = Object.keys(datasets)[0];
+      if(first){ state.currentPath = first; state.index = 0; save(K.STATE, state); }
     }
     loadCurrentQuestion();
-    renderHistory();
+    refreshAll();
+    try{ renderCatalogTree(); }catch(e){}
   }
-
   start();
 
 })();

@@ -1,10 +1,10 @@
 
 :root{ --bg:#fafafa; --text:#111; --muted:#666; --accent:#0a84ff; --card:#fff; --border:#e5e5e5; }
 *{ box-sizing:border-box; -webkit-tap-highlight-color: transparent; }
-html,body{ margin:0; padding:0; background:var(--bg); color:var(--text); font-family: system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,'Hiragino Kaku Gothic ProN','Noto Sans JP','Yu Gothic UI','Yu Gothic',sans-serif; }
+html,body{ margin:0; padding:0; background:var(--bg); color:var(--text); font-family: system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,'Hiragino Kaku Gothic ProN','Noto Sans JP','Yu Gothic UI','Yu Gothic',sans-serif; font-size:18px; }
 .bold{ font-weight:800; }
 .app-header{ position:sticky; top:0; z-index:10; background:var(--card); border-bottom:1px solid var(--border); padding:12px 16px; }
-.app-header h1{ margin:0; font-size:20px; font-weight:900; }
+.app-header h1{ margin:0; font-size:22px; font-weight:900; }
 .tabs{ display:flex; gap:8px; padding:8px; border-bottom:1px solid var(--border); background:var(--card); position:sticky; top:56px; z-index:9; }
 .tab-btn{ flex:1; padding:10px; font-weight:800; background:#f2f2f2; border:1px solid var(--border); border-radius:12px; }
 .tab-btn.active{ background:var(--accent); color:white; border-color:var(--accent); }
@@ -15,27 +15,27 @@ main{ padding:12px; }
 .nav-btn,.tts-btn,.check-btn,.secondary,.primary{ padding:10px 14px; border-radius:12px; border:1px solid var(--border); font-weight:800; }
 .primary{ background:var(--accent); color:#fff; border-color:var(--accent); }
 .secondary{ background:#fff; }
-.hint{ color:var(--muted); font-size:12px; margin:6px 0; }
+.hint{ color:var(--muted); font-size:14px; margin:6px 0; }
 .qa-area{ background:var(--card); border:1px solid var(--border); border-radius:16px; padding:12px; box-shadow: 0 1px 8px rgba(0,0,0,.04); }
-.jp{ font-size:18px; margin-bottom:8px; }
+.jp{ font-size:20px; margin-bottom:8px; }
 .bank-and-answer{ display:grid; grid-template-columns:1fr; gap:10px; }
 @media(min-width:720px){ .bank-and-answer{ grid-template-columns:1fr 1fr; } }
 .word-bank,.answer-area{ min-height:64px; border:2px dashed var(--border); border-radius:14px; padding:10px; display:flex; flex-wrap:wrap; gap:8px; align-items:flex-start; }
-.token{ padding:10px 12px; border-radius:999px; background:#fff; border:1px solid var(--border); font-weight:800; user-select:none; touch-action:none;  font-weight:900; font-size:18px; border-width:2px; box-shadow:0 2px 6px rgba(0,0,0,.06);}
-
+.token{ padding:12px 14px; border-radius:999px; background:#fff; border:2px solid var(--border); font-weight:900; font-size:18px; user-select:none; touch-action:none; box-shadow:0 2px 6px rgba(0,0,0,.06); }
 .token.bank{ background:#f6f6f6; }
 .token.answer{ background:#fff; }
 .token.dragging{ opacity:.6; transform: scale(1.05); }
+.answer-area .token, .word-bank .token{ margin:4px 6px; }
 .result{ margin-top:8px; font-weight:900; }
 .result.ok{ color:#0a7a20; }
 .result.ng{ color:#b00020; }
 .explain{ margin-top:8px; white-space:pre-wrap; }
-.tree{ padding:6px; background:var(--card); border:1px solid var(--border); border-radius:12px; }
+.tree{ padding:6px; background:var(--card); border:1px solid var(--border); border-radius:12px; max-height:50vh; overflow:auto; }
 .tree-item{ padding:6px 8px; border-radius:8px; cursor:pointer; font-weight:800; display:block; }
 .tree-item:hover{ background:#f2f6ff; }
 .tree-folder{ margin-left:12px; border-left:2px solid var(--border); padding-left:8px; }
 .dataset-list .row{ display:flex; align-items:center; gap:10px; padding:6px 0; border-bottom:1px dashed var(--border); }
-.dataset-list .path{ font-weight:800; flex:1; }
+.dataset-list .path{ font-weight:800; flex:1; cursor:pointer; }
 select, input[type="number"], input[type="text"]{ width:100%; padding:10px; border:1px solid var(--border); border-radius:10px; font-weight:700; }
 .block{ display:block; margin:10px 0; }
 .flex-row{ display:flex; gap:10px; align-items:center; }
@@ -49,5 +49,3 @@ button:active{ transform:translateY(1px); }
 .hist-actions{ display:flex; gap:6px; }
 .hist-actions button{ padding:6px 10px; border-radius:10px; font-weight:800; border:1px solid var(--border); }
 .log{ white-space:pre-wrap; font-family: ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; background:#fff; border:1px solid var(--border); border-radius:10px; padding:8px; margin-top:8px; }
-
-.answer-area .token, .word-bank .token{ margin: 4px 6px; }
