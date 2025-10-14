@@ -491,9 +491,7 @@
     el.explainBox.textContent = `正解: ${it.en}\n\n解説:\n${it.ex || '(なし)'}`;
     pushHistory(it, user, ok);
     renderHistory();
-    // auto-advance after delayBetweenQs if correct
-    const d2 = Math.max(0.5, Math.min(10, Number(el.delayBetweenQs.value || settings.delayBetweenQs)));
-    setTimeout(()=>{ nextQuestion(); }, d2*1000);
+setTimeout(()=>{ nextQuestion(); }, d2*1000);
   });
 
   el.clearHistBtn.addEventListener('click', ()=>{
