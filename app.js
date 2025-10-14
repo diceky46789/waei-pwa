@@ -86,74 +86,30 @@
   }
   function renderTree(container, tree, prefix=''){
     container.innerHTML = '';
-    const collapsed = renderTree._collapsed = renderTree._collapsed || {};
     function walk(node, parentEl){
-      Object.keys(node).sort().forEach(name=>{
+      for(const name of Object.keys(node).sort()){
         const n = node[name];
-        const full = n.__full__;
-        const children = n.__children__;
-        const hasChildren = children && Object.keys(children).length > 0;
         const item = document.createElement('div');
         item.className = 'tree-item';
-        if(hasChildren){
-          const label = document.createElement('div');
-          label.className = 'folder-label';
-          const caret = document.createElement('span');
-          caret.className = 'caret';
-          caret.textContent = collapsed[full] ? '►' : '▾';
-          const text = document.createElement('span');
-          text.textContent = name;
-          label.appendChild(caret); label.appendChild(text);
-          item.appendChild(label);
-          parentEl.appendChild(item);
-
+        item.textContent = name;
+        item.dataset.path = n.__full__;
+        parentEl.appendChild(item);
+        item.addEventListener('click', ()=>{
+          state.currentPath = item.dataset.path;
+          state.index = 0;
+          save(K.STATE, state);
+          orderCache[state.currentPath] = null; // reset order
+          loadCurrentQuestion();
+          highlightCurrentPath();
+        });
+        const children = n.__children__;
+        if(children && Object.keys(children).length){
           const folder = document.createElement('div');
           folder.className = 'tree-folder';
           parentEl.appendChild(folder);
-
-          const toggle = ()=>{
-            collapsed[full] = !collapsed[full];
-            caret.textContent = collapsed[full] ? '►' : '▾';
-            folder.style.display = collapsed[full] ? 'none' : '';
-          };
-          label.addEventListener('click', toggle);
-          folder.style.display = collapsed[full] ? 'none' : '';
           walk(children, folder);
-
-          // If this full path itself is a dataset (leaf as file at this node), render a selectable leaf entry.
-          if(datasets[full]){
-            const leaf = document.createElement('div');
-            leaf.className = 'tree-item leaf';
-            leaf.textContent = '(データセット) ' + name;
-            leaf.dataset.path = full;
-            leaf.addEventListener('click', ()=>{
-              state.currentPath = leaf.dataset.path;
-              state.index = 0;
-              save(K.STATE, state);
-              orderCache[state.currentPath] = null;
-              loadCurrentQuestion();
-              highlightCurrentPath();
-            });
-            folder.insertBefore(leaf, folder.firstChild);
-          }
-        }else{
-          const leaf = document.createElement('div');
-          leaf.className = 'tree-item leaf' + (datasets[full] ? '' : ' disabled');
-          leaf.textContent = name;
-          leaf.dataset.path = full;
-          parentEl.appendChild(leaf);
-          if(datasets[full]){
-            leaf.addEventListener('click', ()=>{
-              state.currentPath = leaf.dataset.path;
-              state.index = 0;
-              save(K.STATE, state);
-              orderCache[state.currentPath] = null;
-              loadCurrentQuestion();
-              highlightCurrentPath();
-            });
-          }
         }
-      });
+      }
     }
     walk(tree, container);
     highlightCurrentPath();
@@ -623,87 +579,10 @@ setTimeout(()=>{ nextQuestion(); }, d2*1000);
   const catStatusEl = document.getElementById('catalogStatus');
 
   function renderCatalogTree(){
+    if(!catTreeEl) return;
     const paths = Object.keys(datasets);
     const tree = (function build(paths){
       const root = {};
-      for(const p of paths){
-        const parts = p.split('/').filter(Boolean);
-        let node = root;
-        for(let i=0;i<parts.length;i++){
-          const part = parts[i];
-          node[part] = node[part] || {__children__: {}, __full__: parts.slice(0,i+1).join('/')};
-          node = node[part].__children__;
-        }
-      }
-      return root;
-    })(paths);
-    const container = el.catalogTree;
-    if(!container) return;
-    container.innerHTML='';
-    const collapsed = renderCatalogTree._collapsed = renderCatalogTree._collapsed || {};
-    (function walk(node, parentEl){
-      Object.keys(node).sort().forEach(name=>{
-        const n = node[name];
-        const full = n.__full__;
-        const children = n.__children__;
-        const hasChildren = children && Object.keys(children).length>0;
-        const item = document.createElement('div');
-        item.className = 'tree-item';
-        if(hasChildren){
-          const label = document.createElement('div');
-          label.className = 'folder-label';
-          const caret = document.createElement('span');
-          caret.className = 'caret';
-          caret.textContent = collapsed[full] ? '►' : '▾';
-          const text = document.createElement('span');
-          text.textContent = name;
-          label.appendChild(caret); label.appendChild(text);
-          item.appendChild(label);
-          parentEl.appendChild(item);
-
-          const folder = document.createElement('div');
-          folder.className = 'tree-folder';
-          parentEl.appendChild(folder);
-
-          const toggle = ()=>{
-            collapsed[full] = !collapsed[full];
-            caret.textContent = collapsed[full] ? '►' : '▾';
-            folder.style.display = collapsed[full] ? 'none' : '';
-          };
-          label.addEventListener('click', toggle);
-          folder.style.display = collapsed[full] ? 'none' : '';
-          walk(children, folder);
-
-          if(datasets[full]){
-            const leaf = document.createElement('div');
-            leaf.className = 'tree-item leaf';
-            leaf.textContent = '(データセット) ' + name;
-            leaf.dataset.path = full;
-            leaf.addEventListener('click', ()=>{
-              catalogPath = leaf.dataset.path;
-              highlightCatalogPath();
-              renderCatalogList();
-            });
-            folder.insertBefore(leaf, folder.firstChild);
-          }
-        }else{
-          const leaf = document.createElement('div');
-          leaf.className = 'tree-item leaf' + (datasets[full] ? '' : ' disabled');
-          leaf.textContent = name;
-          leaf.dataset.path = full;
-          parentEl.appendChild(leaf);
-          if(datasets[full]){
-            leaf.addEventListener('click', ()=>{
-              catalogPath = leaf.dataset.path;
-              highlightCatalogPath();
-              renderCatalogList();
-            });
-          }
-        }
-      });
-    })(tree, container);
-    highlightCatalogPath();
-  };
       for(const p of paths){
         const parts = p.split('/').filter(Boolean);
         let node = root;
