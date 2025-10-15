@@ -44,6 +44,7 @@ select, input[type="number"], input[type="text"]{ width:100%; padding:10px; bord
 .app-footer{ padding:16px; text-align:center; color:var(--muted); }
 button:active{ transform:translateY(1px); }
 .history-list .hist-item{ background:var(--card); border:1px solid var(--border); border-radius:12px; padding:10px; margin:8px 0; box-shadow: 0 1px 6px rgba(0,0,0,.03); }
+.history-list .hist-item.playing{ background:#f2f8ff; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(10,132,255,.25) inset; }
 .hist-top{ display:flex; justify-content:space-between; align-items:center; gap:10px; }
 .hist-title{ font-weight:900; }
 .hist-actions{ display:flex; gap:6px; }
