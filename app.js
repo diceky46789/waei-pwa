@@ -1,4 +1,4 @@
-/* 和英正順アプリ v11 - Precise drag-to-insert caret (other specs unchanged) */
+/* 和英正順アプリ v12 - Row-aware precise drag-to-insert (other specs unchanged) */
 (function(){
   'use strict';
 
@@ -159,7 +159,7 @@
     el.delaysInfo.textContent = `現在の遅延設定: 日→英 ${settings.delayJaToEn}s, 次の問題まで ${settings.delayBetweenQs}s`;
   }
 
-  // Drag & drop + tap (with insertion caret)
+  // Drag & drop + tap (row-aware precise insertion caret)
   let dragInfo=null;
   const dropCaret = document.createElement('div');
   dropCaret.className = 'drop-caret';
@@ -170,14 +170,54 @@
     if(x>bankR.left && x<bankR.right && y>bankR.top && y<bankR.bottom) return el.wordBank;
     return null;
   }
-  function placeCaret(container, x){
-    const kids=[...container.children].filter(c=> c.classList && c.classList.contains('token') && (!dragInfo || c!==dragInfo.el));
-    let placed=false;
-    for(const c of kids){
-      const r=c.getBoundingClientRect();
-      if(x < r.left + r.width/2){ container.insertBefore(dropCaret, c); placed=true; break; }
+  function tokensInContainer(container){
+    return [...container.children].filter(c=> c.classList && c.classList.contains('token') && c!==dropCaret && (!dragInfo || c!==dragInfo.el));
+  }
+  function groupByRows(tokens){
+    const rows=[]; const EPS=12;
+    tokens.forEach(t=>{
+      const r=t.getBoundingClientRect(); const midY=r.top + r.height/2;
+      let row=rows.find(row=>Math.abs(row.top - midY) < EPS);
+      if(!row){ row={top:midY, items:[]}; rows.push(row); }
+      row.items.push({el:t, rect:r});
+    });
+    rows.sort((a,b)=>a.top-b.top);
+    return rows;
+  }
+  function findRowNearY(rows, y){
+    if(!rows.length) return null;
+    let best=null, bestDist=1e9;
+    rows.forEach(row=>{
+      const top = Math.min(...row.items.map(i=>i.rect.top));
+      const bottom = Math.max(...row.items.map(i=>i.rect.bottom));
+      if(y>=top && y<=bottom){
+        const center=(top+bottom)/2; const d=Math.abs(y-center);
+        if(d<bestDist){ best=row; bestDist=d; }
+      }else{
+        const d = (y<top) ? (top-y) : (y-bottom);
+        if(d<bestDist){ best=row; bestDist=d; }
+      }
+    });
+    return best;
+  }
+  function placeCaretSmart(container, x, y){
+    if(!container) return;
+    const tokens = tokensInContainer(container);
+    if(tokens.length===0){ container.appendChild(dropCaret); return; }
+    const rows = groupByRows(tokens);
+    const row = findRowNearY(rows, y) || rows[rows.length-1];
+    const items = row.items;
+    const gaps = [];
+    gaps.push({idx:0, x: items[0].rect.left - 1});
+    for(let i=0;i<items.length-1;i++){
+      const mid = (items[i].rect.right + items[i+1].rect.left)/2;
+      gaps.push({idx:i+1, x: mid});
     }
-    if(!placed) container.appendChild(dropCaret);
+    gaps.push({idx:items.length, x: items[items.length-1].rect.right + 1});
+    let best=gaps[0], bestD=Math.abs(x-gaps[0].x);
+    for(let i=1;i<gaps.length;i++){ const d=Math.abs(x-gaps[i].x); if(d<bestD){ best=gaps[i]; bestD=d; } }
+    const refEl = (best.idx < items.length) ? items[best.idx].el : null;
+    if(refEl) container.insertBefore(dropCaret, refEl); else container.appendChild(dropCaret);
   }
   function clearCaret(){ if(dropCaret.parentElement) dropCaret.parentElement.removeChild(dropCaret); }
 
@@ -189,10 +229,10 @@
     });
     tokenEl.addEventListener('pointermove', (ev)=>{
       if(!dragInfo) return;
+      try{ ev.preventDefault(); }catch(_){}
       const x=ev.clientX, y=ev.clientY;
       const cont = containerAtPoint(x,y);
-      if(cont){ placeCaret(cont, x); }
-      else { clearCaret(); }
+      if(cont){ placeCaretSmart(cont, x, y); } else { clearCaret(); }
     });
     tokenEl.addEventListener('pointerup', ()=>{
       if(!dragInfo) return;
