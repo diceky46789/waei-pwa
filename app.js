@@ -1,4 +1,4 @@
-/* 和英正順アプリ v12 - Row-aware precise drag-to-insert (other specs unchanged) */
+/* 和英正順アプリ v15 - Fixes + in-tab search + precise drag (specs unchanged) */
 (function(){
   'use strict';
 
@@ -38,9 +38,6 @@
     clearHistBtn: document.getElementById('clearHistBtn'),
     historyList: document.getElementById('historyList'),
     histFilters: document.getElementById('histFilters'),
-    historySearch: document.getElementById('historySearch'),
-    historySearchClear: document.getElementById('historySearchClear'),
-    historySearchInfo: document.getElementById('historySearchInfo'),
     // Settings
     delayJaToEn: document.getElementById('delayJaToEn'),
     delayBetweenQs: document.getElementById('delayBetweenQs'),
@@ -58,6 +55,10 @@
     catalogSearch: document.getElementById('catalogSearch'),
     catalogSearchClear: document.getElementById('catalogSearchClear'),
     catalogSearchInfo: document.getElementById('catalogSearchInfo'),
+    // History search
+    historySearch: document.getElementById('historySearch'),
+    historySearchClear: document.getElementById('historySearchClear'),
+    historySearchInfo: document.getElementById('historySearchInfo'),
     // Self eval
     selfEval: document.getElementById('selfEval')
   };
@@ -279,38 +280,51 @@
   function currentGradeLabel(g){
     return g==='perfect'?'完璧': g==='good'?'良い': g==='uncertain'?'自信なし': g==='bad'?'ダメ': '';
   }
-  
-function renderHistory(){
-  el.historyList.innerHTML='';
-  const base = history.filter(h => historyFilter==='all' ? true : h.grade === historyFilter);
-  const q = (historyQuery||'').trim().toLowerCase();
-  const list = base.filter(h => {
-    if(!q) return true;
-    const hay = (h.jp + ' ' + h.en + ' ' + (h.ex||'') + ' ' + (h.user||'')).toLowerCase();
-    return hay.includes(q);
-  });
-  list.forEach((h)=>{
-    const con=document.createElement('div'); con.className='hist-item';
-    const top=document.createElement('div'); top.className='hist-top';
-    const title=document.createElement('div'); title.className='hist-title'; const when=new Date(h.ts).toLocaleString(); title.textContent=`[${h.ok?'〇':'×'}] ${when} — ${h.path}`;
-    if(h.grade){ const tag=document.createElement('span'); tag.className='hist-tag '+h.grade; tag.textContent=currentGradeLabel(h.grade); title.appendChild(tag); }
-    const actions=document.createElement('div'); actions.className='hist-actions';
-    const again=document.createElement('button'); again.textContent='この問題で練習'; again.addEventListener('click', ()=>{ state.currentPath=h.path; const pos=getOrder(h.path).indexOf(h.idx); state.index=Math.max(0,pos); save(K.STATE,state); switchTo('practice'); loadCurrentQuestion(); });
-    const speak=document.createElement('button'); speak.textContent='読み上げ'; speak.addEventListener('click', async ()=>{ await say(h.jp,'ja-JP',settings.jaVoiceURI||el.jaVoice.value); await new Promise(r=>setTimeout(r, Math.max(0.5,settings.delayJaToEn)*1000)); await say(h.en,'en-US',settings.enVoiceURI||el.enVoice.value); });
-    actions.appendChild(again); actions.appendChild(speak);
-    top.appendChild(title); top.appendChild(actions);
-    const jp=document.createElement('div'); jp.className='bold'; jp.innerHTML=highlightHTML(h.jp, historyQuery||'');
-    const en=document.createElement('div'); en.innerHTML=highlightHTML(h.en, historyQuery||'');
-    const user=document.createElement('div'); user.innerHTML='あなたの解答: ' + highlightHTML(h.user||'(未入力)', historyQuery||'');
-    const ex=document.createElement('div'); ex.className='hint'; ex.innerHTML=highlightHTML(h.ex||'', historyQuery||'');
-    con.appendChild(top); con.appendChild(jp); con.appendChild(en); con.appendChild(user); con.appendChild(ex);
-    el.historyList.appendChild(con);
-  });
-  if(el.historySearchInfo){
-    el.historySearchInfo.textContent = `表示: ${list.length} / 全${base.length}件` + (historyQuery? ` （検索: "${historyQuery}"）` : '');
+
+  // --- Search helpers ---
+  function escHTML(s){ return (s??'').replace(/[&<>\"']/g, c=> ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;', "'":'&#39;'}[c])); }
+  function highlightHTML(text, q){
+    const src = escHTML(text);
+    if(!q) return src;
+    try{
+      const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'ig');
+      return src.replace(re, m=>`<mark class="hl">${m}</mark>`);
+    }catch(_){ return src; }
   }
-}
-function switchTo(tab){ document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab)); document.querySelectorAll('.tab').forEach(sec=>sec.classList.toggle('active', sec.id===tab)); }
+  let catalogQuery = '';
+  let historyQuery = '';
+
+  function renderHistory(){
+    el.historyList.innerHTML='';
+    const base = history.filter(h => historyFilter==='all' ? true : h.grade === historyFilter);
+    const q = (historyQuery||'').trim().toLowerCase();
+    const list = base.filter(h => {
+      if(!q) return true;
+      const hay = (h.jp + ' ' + h.en + ' ' + (h.ex||'') + ' ' + (h.user||'')).toLowerCase();
+      return hay.includes(q);
+    });
+    list.forEach((h)=>{
+      const con=document.createElement('div'); con.className='hist-item';
+      const top=document.createElement('div'); top.className='hist-top';
+      const title=document.createElement('div'); title.className='hist-title'; const when=new Date(h.ts).toLocaleString(); title.textContent=`[${h.ok?'〇':'×'}] ${when} — ${h.path}`;
+      if(h.grade){ const tag=document.createElement('span'); tag.className='hist-tag '+h.grade; tag.textContent=currentGradeLabel(h.grade); title.appendChild(tag); }
+      const actions=document.createElement('div'); actions.className='hist-actions';
+      const again=document.createElement('button'); again.textContent='この問題で練習'; again.addEventListener('click', ()=>{ state.currentPath=h.path; const pos=getOrder(h.path).indexOf(h.idx); state.index=Math.max(0,pos); save(K.STATE,state); switchTo('practice'); loadCurrentQuestion(); });
+      const speak=document.createElement('button'); speak.textContent='読み上げ'; speak.addEventListener('click', async ()=>{ await say(h.jp,'ja-JP',settings.jaVoiceURI||el.jaVoice.value); await new Promise(r=>setTimeout(r, Math.max(0.5,settings.delayJaToEn)*1000)); await say(h.en,'en-US',settings.enVoiceURI||el.enVoice.value); });
+      actions.appendChild(again); actions.appendChild(speak);
+      top.appendChild(title); top.appendChild(actions);
+      const jp=document.createElement('div'); jp.className='bold'; jp.innerHTML=highlightHTML(h.jp, historyQuery||'');
+      const en=document.createElement('div'); en.innerHTML=highlightHTML(h.en, historyQuery||'');
+      const user=document.createElement('div'); user.innerHTML='あなたの解答: ' + highlightHTML(h.user||'(未入力)', historyQuery||'');
+      const ex=document.createElement('div'); ex.className='hint'; ex.innerHTML=highlightHTML(h.ex||'', historyQuery||'');
+      con.appendChild(top); con.appendChild(jp); con.appendChild(en); con.appendChild(user); con.appendChild(ex);
+      el.historyList.appendChild(con);
+    });
+    if(el.historySearchInfo){
+      el.historySearchInfo.textContent = `表示: ${list.length} / 全${base.length}件` + (historyQuery? ` （検索: "${historyQuery}"）` : '');
+    }
+  }
+  function switchTo(tab){ document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab)); document.querySelectorAll('.tab').forEach(sec=>sec.classList.toggle('active', sec.id===tab)); }
 
   // Event bindings
   el.nextBtn.addEventListener('click', nextQuestion);
@@ -352,11 +366,9 @@ function switchTo(tab){ document.querySelectorAll('.tab-btn').forEach(b=>b.class
     });
   }
 
-  // History filter buttons
-  // History search events
+  // History filter buttons + search events
   if(el.historySearch){ el.historySearch.addEventListener('input', ()=>{ historyQuery = el.historySearch.value; renderHistory(); }); }
   if(el.historySearchClear){ el.historySearchClear.addEventListener('click', ()=>{ historyQuery=''; el.historySearch.value=''; renderHistory(); }); }
-
   if(el.histFilters){
     el.histFilters.addEventListener('click', (e)=>{
       const b = e.target.closest('.hf-btn'); if(!b) return;
@@ -428,13 +440,16 @@ function switchTo(tab){ document.querySelectorAll('.tab-btn').forEach(b=>b.class
   }
   function refreshDatasetsUI(){ renderDatasetList(); try{ renderCatalogTree(); }catch(e){} }
 
-  
+  // Catalog (tree) + list + playback with autoscroll + start practice at index
+  let catalogPath=null, catalogAbort={stop:false}, catalogPlayingIdx=-1;
+  function buildTree(paths){
+    const root={}; for(const p of paths){ const parts=p.split('/').filter(Boolean); let node=root; for(let i=0;i<parts.length;i++){ const part=parts[i]; node[part]=node[part]||{__children__:{}, __full__: parts.slice(0,i+1).join('/')}; node=node[part].__children__; } } return root;
+  }
   // Start practice at a specific real index (works with ordered/random modes)
   function startPracticeAt(path, realIdx){
     if(!datasets[path]) return;
     state.currentPath = path;
-    // ensure orderCache according to mode
-    orderCache[path] = null; // reset so getOrder() regenerates if random
+    orderCache[path] = null; // reset so getOrder() regenerates (for random mode)
     save(K.STATE, state);
     const ord = getOrder(path);
     const pos = Math.max(0, ord.indexOf(realIdx));
@@ -442,24 +457,6 @@ function switchTo(tab){ document.querySelectorAll('.tab-btn').forEach(b=>b.class
     save(K.STATE, state);
     switchTo('practice');
     loadCurrentQuestion();
-  }
-
-  // --- Search helpers ---
-  function escHTML(s){ return (s??'').replace(/[&<>\"']/g, c=> ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',\"'\":'&#39;'}[c])); }
-  function highlightHTML(text, q){
-    const src = escHTML(text);
-    if(!q) return src;
-    try{
-      const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'ig');
-      return src.replace(re, m=>`<mark class="hl">${m}</mark>`);
-    }catch(_){ return src; }
-  }
-  let catalogQuery = '';
-  let historyQuery = '';
-// Catalog (tree) + list + playback with autoscroll
-  let catalogPath=null, catalogAbort={stop:false}, catalogPlayingIdx=-1;
-  function buildTree(paths){
-    const root={}; for(const p of paths){ const parts=p.split('/').filter(Boolean); let node=root; for(let i=0;i<parts.length;i++){ const part=parts[i]; node[part]=node[part]||{__children__:{}, __full__: parts.slice(0,i+1).join('/')}; node=node[part].__children__; } } return root;
   }
   function renderCatalogTree(){
     const paths=Object.keys(datasets); const tree=buildTree(paths); const c=el.catalogTree; if(!c) return; c.innerHTML='';
@@ -472,35 +469,34 @@ function switchTo(tab){ document.querySelectorAll('.tab-btn').forEach(b=>b.class
     highlightCatalogPath();
   }
   function highlightCatalogPath(){ if(!el.catalogTree) return; [...el.catalogTree.querySelectorAll('.tree-item')].forEach(e=>{ e.style.background = (e.dataset.path===catalogPath)? '#e8f0ff':''; }); }
-  
-function renderCatalogList(){
-  el.catalogList.innerHTML='';
-  if(!catalogPath || !datasets[catalogPath]){ el.catalogStatus.textContent='データセットを選択してください。'; if(el.catalogSearchInfo) el.catalogSearchInfo.textContent=''; return; }
-  el.catalogStatus.textContent='';
-  const items = datasets[catalogPath].items;
-  const q = (catalogQuery||'').trim();
-  let shown = 0;
-  items.forEach((it,idx)=>{
-    const hay = (it.jp + ' ' + it.en + ' ' + (it.ex||'')).toLowerCase();
-    if(q && !hay.includes(q.toLowerCase())) return;
-    const con=document.createElement('div'); con.className='hist-item'; con.dataset.idx=idx;
-    const head=document.createElement('div'); head.className='hist-top';
-    const title=document.createElement('div'); title.className='hist-title'; title.textContent=`#${idx+1}`;
-    const act=document.createElement('div'); act.className='hist-actions';
-    const btn=document.createElement('button'); btn.textContent='この問題を再生'; btn.addEventListener('click', ()=> playOneAtIndex(idx)); act.appendChild(btn);
-    const btn2=document.createElement('button'); btn2.textContent='この問題で練習'; btn2.addEventListener('click', ()=> startPracticeAt(catalogPath, idx)); act.appendChild(btn2);
-    head.appendChild(title); head.appendChild(act);
-    const jp=document.createElement('div'); jp.className='bold'; jp.innerHTML=highlightHTML(it.jp, q);
-    const en=document.createElement('div'); en.innerHTML=highlightHTML(it.en, q);
-    con.appendChild(head); con.appendChild(jp); con.appendChild(en);
-    el.catalogList.appendChild(con);
-    shown++;
-  });
-  if(el.catalogSearchInfo){
-    el.catalogSearchInfo.textContent = `表示: ${shown} / 全${datasets[catalogPath].items.length}件` + (catalogQuery? ` （検索: "${catalogQuery}"）` : '');
+  function renderCatalogList(){
+    el.catalogList.innerHTML='';
+    if(!catalogPath || !datasets[catalogPath]){ el.catalogStatus.textContent='データセットを選択してください。'; if(el.catalogSearchInfo) el.catalogSearchInfo.textContent=''; return; }
+    el.catalogStatus.textContent='';
+    const items = datasets[catalogPath].items;
+    const q = (catalogQuery||'').trim();
+    let shown = 0;
+    items.forEach((it,idx)=>{
+      const hay = (it.jp + ' ' + it.en + ' ' + (it.ex||'')).toLowerCase();
+      if(q && !hay.includes(q.toLowerCase())) return;
+      const con=document.createElement('div'); con.className='hist-item'; con.dataset.idx=idx;
+      const head=document.createElement('div'); head.className='hist-top';
+      const title=document.createElement('div'); title.className='hist-title'; title.textContent=`#${idx+1}`;
+      const act=document.createElement('div'); act.className='hist-actions';
+      const btn=document.createElement('button'); btn.textContent='この問題を再生'; btn.addEventListener('click', ()=> playOneAtIndex(idx)); act.appendChild(btn);
+      const btn2=document.createElement('button'); btn2.textContent='この問題で練習'; btn2.addEventListener('click', ()=> startPracticeAt(catalogPath, idx)); act.appendChild(btn2);
+      head.appendChild(title); head.appendChild(act);
+      const jp=document.createElement('div'); jp.className='bold'; jp.innerHTML=highlightHTML(it.jp, q);
+      const en=document.createElement('div'); en.innerHTML=highlightHTML(it.en, q);
+      con.appendChild(head); con.appendChild(jp); con.appendChild(en);
+      el.catalogList.appendChild(con);
+      shown++;
+    });
+    if(el.catalogSearchInfo){
+      el.catalogSearchInfo.textContent = `表示: ${shown} / 全${datasets[catalogPath].items.length}件` + (catalogQuery? ` （検索: "${catalogQuery}"）` : '');
+    }
   }
-}
-function highlightCatalogPlaying(idx){
+  function highlightCatalogPlaying(idx){
     catalogPlayingIdx = idx;
     const nodes=[...el.catalogList.children];
     nodes.forEach((n,i)=> n.classList.toggle('playing', i===idx));
@@ -531,8 +527,6 @@ function highlightCatalogPlaying(idx){
   }
   el.catalogPlayAll && el.catalogPlayAll.addEventListener('click', ()=>{ if(!catalogPath){ el.catalogStatus.textContent='データセットを選択してください。'; return; } playAll(catalogPath); });
   el.catalogStop && el.catalogStop.addEventListener('click', ()=>{ catalogAbort.stop=true; });
-
-  // Catalog search events
   if(el.catalogSearch){ el.catalogSearch.addEventListener('input', ()=>{ catalogQuery = el.catalogSearch.value; renderCatalogList(); }); }
   if(el.catalogSearchClear){ el.catalogSearchClear.addEventListener('click', ()=>{ catalogQuery=''; el.catalogSearch.value=''; renderCatalogList(); }); }
 
