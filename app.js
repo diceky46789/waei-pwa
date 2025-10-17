@@ -1,4 +1,4 @@
-/* 和英正順アプリ v9 - Self-eval + History category tabs + all prior features */
+/* 和英正順アプリ v10 - Dataset delete + all prior features */
 (function(){
   'use strict';
 
@@ -290,7 +290,7 @@
     el.delaysInfo.textContent = `現在の遅延設定: 日→英 ${settings.delayJaToEn}s, 次の問題まで ${settings.delayBetweenQs}s`;
   });
 
-  // Upload & Dataset list
+  // Upload & Dataset list (with delete)
   el.uploadCsvBtn.addEventListener('click', async ()=>{
     const files=el.csvFiles.files; const folder=(el.folderPath.value||'').trim().replace(/^\/+|\/+$/g,'');
     if(!files.length){ el.uploadLog.textContent='CSVファイルを選択してください。'; return; }
@@ -315,12 +315,37 @@
       const go=document.createElement('button'); go.textContent='このセットで練習';
       function startPractice(){ state.currentPath=path; state.index=0; save(K.STATE,state); orderCache[path]=null; switchTo('practice'); loadCurrentQuestion(); }
       go.addEventListener('click', startPractice); pathSpan.addEventListener('click', startPractice);
-      row.appendChild(pathSpan); row.appendChild(sel); row.appendChild(go); el.datasetList.appendChild(row);
+      const del=document.createElement('button'); del.textContent='削除'; del.className='danger';
+      del.addEventListener('click', ()=>{
+        if(!confirm(`${path} を削除しますか？（データセットのみ削除。履歴は残ります）`)) return;
+        delete datasets[path];
+        save(K.DATASETS, datasets);
+        delete orderCache[path];
+        // If current practice dataset is removed, fallback
+        if(state.currentPath === path){
+          const keys = Object.keys(datasets);
+          state.currentPath = keys.length ? keys[0] : null;
+          state.index = 0;
+          save(K.STATE, state);
+          loadCurrentQuestion();
+        }
+        // If catalog is on this path, reset selection
+        try{
+          if(typeof catalogPath !== 'undefined' && catalogPath === path){
+            catalogPath = null;
+            if(el.catalogList) el.catalogList.innerHTML='';
+            if(el.catalogStatus) el.catalogStatus.textContent='データセットを選択してください。';
+          }
+        }catch(_){}
+        refreshDatasetsUI();
+      });
+      row.appendChild(pathSpan); row.appendChild(sel); row.appendChild(go); row.appendChild(del);
+      el.datasetList.appendChild(row);
     });
   }
   function refreshDatasetsUI(){ renderDatasetList(); try{ renderCatalogTree(); }catch(e){} }
 
-  // Catalog (tree minimal) + list + playback with autoscroll
+  // Catalog (tree) + list + playback with autoscroll
   let catalogPath=null, catalogAbort={stop:false}, catalogPlayingIdx=-1;
   function buildTree(paths){
     const root={}; for(const p of paths){ const parts=p.split('/').filter(Boolean); let node=root; for(let i=0;i<parts.length;i++){ const part=parts[i]; node[part]=node[part]||{__children__:{}, __full__: parts.slice(0,i+1).join('/')}; node=node[part].__children__; } } return root;
@@ -385,7 +410,7 @@
   el.catalogPlayAll && el.catalogPlayAll.addEventListener('click', ()=>{ if(!catalogPath){ el.catalogStatus.textContent='データセットを選択してください。'; return; } playAll(catalogPath); });
   el.catalogStop && el.catalogStop.addEventListener('click', ()=>{ catalogAbort.stop=true; });
 
-  // Settings UI
+  // Settings UI & demo
   function initSettingsUI(){ el.delayJaToEn.value=settings.delayJaToEn; el.delayBetweenQs.value=settings.delayBetweenQs; }
   function ensureDemoData(){
     if(Object.keys(datasets).length) return;

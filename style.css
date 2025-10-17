@@ -70,3 +70,7 @@ button:active{ transform:translateY(1px); }
 .hist-tag.good{ background:#eef2ff; border-color:#3b82f6; }
 .hist-tag.uncertain{ background:#fff7ed; border-color:#f59e0b; }
 .hist-tag.bad{ background:#fef2f2; border-color:#ef4444; }
+
+/* Danger (Delete) */
+.danger{ background:#fff; color:#b00020; border:1px solid #ef4444; }
+.danger:active{ transform:translateY(1px); }
