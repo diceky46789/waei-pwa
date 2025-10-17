@@ -42,6 +42,17 @@
         </div>
         <div class="result" id="resultBox"></div>
         <div class="explain" id="explainBox"></div>
+
+        <!-- Self-evaluation (shown after Check) -->
+        <div id="selfEval" class="self-eval hidden">
+          <span class="hint">自己評価:</span>
+          <div class="self-eval-buttons">
+            <button class="sev-btn sev-perfect" data-grade="perfect">完璧</button>
+            <button class="sev-btn sev-good" data-grade="good">良い</button>
+            <button class="sev-btn sev-uncertain" data-grade="uncertain">自信なし</button>
+            <button class="sev-btn sev-bad" data-grade="bad">ダメ</button>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -80,6 +91,13 @@
     <!-- History Tab -->
     <section id="history" class="tab">
       <div class="controls-row">
+        <div id="histFilters" class="hist-filters">
+          <button class="hf-btn active" data-filter="all">すべて</button>
+          <button class="hf-btn" data-filter="perfect">完璧</button>
+          <button class="hf-btn" data-filter="good">良い</button>
+          <button class="hf-btn" data-filter="uncertain">自信なし</button>
+          <button class="hf-btn" data-filter="bad">ダメ</button>
+        </div>
         <button id="clearHistBtn" class="secondary">履歴を全削除</button>
       </div>
       <div id="historyList" class="history-list"></div>

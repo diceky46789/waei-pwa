@@ -1,4 +1,4 @@
-/* 和英正順アプリ v8 - Catalog autoscroll highlight */
+/* 和英正順アプリ v9 - Self-eval + History category tabs + all prior features */
 (function(){
   'use strict';
 
@@ -37,6 +37,7 @@
     // History
     clearHistBtn: document.getElementById('clearHistBtn'),
     historyList: document.getElementById('historyList'),
+    histFilters: document.getElementById('histFilters'),
     // Settings
     delayJaToEn: document.getElementById('delayJaToEn'),
     delayBetweenQs: document.getElementById('delayBetweenQs'),
@@ -50,7 +51,9 @@
     catalogList: document.getElementById('catalogList'),
     catalogPlayAll: document.getElementById('catalogPlayAll'),
     catalogStop: document.getElementById('catalogStop'),
-    catalogStatus: document.getElementById('catalogStatus')
+    catalogStatus: document.getElementById('catalogStatus'),
+    // Self eval
+    selfEval: document.getElementById('selfEval')
   };
 
   let datasets = load(K.DATASETS) || {};
@@ -58,6 +61,8 @@
   let history = load(K.HISTORY) || [];
   let state = Object.assign({currentPath:null, index:0}, load(K.STATE) || {});
   let orderCache = {};
+  let historyFilter = 'all';
+  let pendingHistoryId = null;
 
   function save(key, value){ localStorage.setItem(key, JSON.stringify(value)); }
   function load(key){ try { return JSON.parse(localStorage.getItem(key)); } catch(e){ return null; } }
@@ -144,7 +149,7 @@
   }
 
   // Build QA
-  function clearQA(){ el.wordBank.innerHTML=''; el.answerArea.innerHTML=''; el.resultBox.textContent=''; el.resultBox.className='result'; el.explainBox.textContent=''; }
+  function clearQA(){ el.wordBank.innerHTML=''; el.answerArea.innerHTML=''; el.resultBox.textContent=''; el.resultBox.className='result'; el.explainBox.textContent=''; el.selfEval && el.selfEval.classList.add('hidden'); }
   function loadCurrentQuestion(){
     const it = getCurrentItem(); clearQA();
     if(!it){ el.jpText.textContent='「問題」タブでデータセットを選んでください。'; return; }
@@ -193,13 +198,24 @@
   function getAnswerText(){ const words=[...el.answerArea.querySelectorAll('.token')].map(t=>t.textContent); return words.join(' ').replace(/\s+([,.!?;:])/g,'$1').trim(); }
   function normalize(s){ return (s||'').replace(/\s+/g,' ').trim(); }
 
-  function pushHistory(item, user, ok){ history.unshift({ts:Date.now(), path:state.currentPath, idx:item.__realIndex, jp:item.jp, en:item.en, ex:item.ex, user, ok}); history=history.slice(0,1000); save(K.HISTORY, history); }
+  function pushHistory(item, user, ok){
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2);
+    history.unshift({id, ts:Date.now(), path:state.currentPath, idx:item.__realIndex, jp:item.jp, en:item.en, ex:item.ex, user, ok, grade:null});
+    history = history.slice(0,1000);
+    save(K.HISTORY, history);
+    return id;
+  }
+  function currentGradeLabel(g){
+    return g==='perfect'?'完璧': g==='good'?'良い': g==='uncertain'?'自信なし': g==='bad'?'ダメ': '';
+  }
   function renderHistory(){
     el.historyList.innerHTML='';
-    history.forEach(h=>{
+    const list = history.filter(h => historyFilter==='all' ? true : h.grade === historyFilter);
+    list.forEach((h)=>{
       const con=document.createElement('div'); con.className='hist-item';
       const top=document.createElement('div'); top.className='hist-top';
       const title=document.createElement('div'); title.className='hist-title'; const when=new Date(h.ts).toLocaleString(); title.textContent=`[${h.ok?'〇':'×'}] ${when} — ${h.path}`;
+      if(h.grade){ const tag=document.createElement('span'); tag.className='hist-tag '+h.grade; tag.textContent=currentGradeLabel(h.grade); title.appendChild(tag); }
       const actions=document.createElement('div'); actions.className='hist-actions';
       const again=document.createElement('button'); again.textContent='この問題で練習'; again.addEventListener('click', ()=>{ state.currentPath=h.path; const pos=getOrder(h.path).indexOf(h.idx); state.index=Math.max(0,pos); save(K.STATE,state); switchTo('practice'); loadCurrentQuestion(); });
       const speak=document.createElement('button'); speak.textContent='読み上げ'; speak.addEventListener('click', async ()=>{ await say(h.jp,'ja-JP',settings.jaVoiceURI||el.jaVoice.value); await new Promise(r=>setTimeout(r, Math.max(0.5,settings.delayJaToEn)*1000)); await say(h.en,'en-US',settings.enVoiceURI||el.enVoice.value); });
@@ -215,7 +231,7 @@
   }
   function switchTo(tab){ document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab)); document.querySelectorAll('.tab').forEach(sec=>sec.classList.toggle('active', sec.id===tab)); }
 
-  // Bindings
+  // Event bindings
   el.nextBtn.addEventListener('click', nextQuestion);
   el.prevBtn.addEventListener('click', prevQuestion);
   el.resetBtn.addEventListener('click', loadCurrentQuestion);
@@ -234,9 +250,38 @@
     el.resultBox.textContent= ok? '正解！':'不正解…';
     el.resultBox.className='result ' + (ok?'ok':'ng');
     el.explainBox.textContent = `正解: ${it.en}\n\n解説:\n${it.ex||'(なし)'}`;
-    pushHistory(it,user,ok); renderHistory();
+    pendingHistoryId = pushHistory(it, user, ok);
+    renderHistory();
+    el.selfEval && el.selfEval.classList.remove('hidden');
   });
   el.clearHistBtn.addEventListener('click', ()=>{ if(confirm('履歴を全て削除しますか？')){ history=[]; save(K.HISTORY,history); renderHistory(); }});
+
+  // Self-eval buttons
+  if(el.selfEval){
+    el.selfEval.addEventListener('click', (e)=>{
+      const b = e.target.closest('.sev-btn'); if(!b) return;
+      const g = b.dataset.grade;
+      if(pendingHistoryId){
+        const idx = history.findIndex(h=>h.id===pendingHistoryId);
+        if(idx>=0){ history[idx].grade = g; save(K.HISTORY, history); }
+        pendingHistoryId = null;
+      }
+      el.selfEval.classList.add('hidden');
+      renderHistory();
+    });
+  }
+
+  // History filter buttons
+  if(el.histFilters){
+    el.histFilters.addEventListener('click', (e)=>{
+      const b = e.target.closest('.hf-btn'); if(!b) return;
+      historyFilter = b.dataset.filter || 'all';
+      Array.from(el.histFilters.querySelectorAll('.hf-btn')).forEach(x=>x.classList.toggle('active', x===b));
+      renderHistory();
+    });
+  }
+
+  // Settings
   el.saveSettingsBtn.addEventListener('click', ()=>{
     settings.delayJaToEn=Math.max(0.5,Math.min(10,Number(el.delayJaToEn.value)));
     settings.delayBetweenQs=Math.max(0.5,Math.min(10,Number(el.delayBetweenQs.value)));
@@ -275,7 +320,7 @@
   }
   function refreshDatasetsUI(){ renderDatasetList(); try{ renderCatalogTree(); }catch(e){} }
 
-  // Catalog (dataset tree minimal) + list + playback with autoscroll
+  // Catalog (tree minimal) + list + playback with autoscroll
   let catalogPath=null, catalogAbort={stop:false}, catalogPlayingIdx=-1;
   function buildTree(paths){
     const root={}; for(const p of paths){ const parts=p.split('/').filter(Boolean); let node=root; for(let i=0;i<parts.length;i++){ const part=parts[i]; node[part]=node[part]||{__children__:{}, __full__: parts.slice(0,i+1).join('/')}; node=node[part].__children__; } } return root;
@@ -340,7 +385,8 @@
   el.catalogPlayAll && el.catalogPlayAll.addEventListener('click', ()=>{ if(!catalogPath){ el.catalogStatus.textContent='データセットを選択してください。'; return; } playAll(catalogPath); });
   el.catalogStop && el.catalogStop.addEventListener('click', ()=>{ catalogAbort.stop=true; });
 
-  // Init
+  // Settings UI
+  function initSettingsUI(){ el.delayJaToEn.value=settings.delayJaToEn; el.delayBetweenQs.value=settings.delayBetweenQs; }
   function ensureDemoData(){
     if(Object.keys(datasets).length) return;
     datasets["デモ/医療/ALT基礎"]={ mode:'ordered', items:[
@@ -350,12 +396,11 @@
     ]};
     save(K.DATASETS,datasets);
   }
-  function initSettingsUI(){ el.delayJaToEn.value=settings.delayJaToEn; el.delayBetweenQs.value=settings.delayBetweenQs; }
+  function refreshAll(){ refreshDatasetsUI(); renderHistory(); el.delaysInfo.textContent = `現在の遅延設定: 日→英 ${settings.delayJaToEn}s, 次の問題まで ${settings.delayBetweenQs}s`; }
   function start(){
     ensureDemoData(); initSettingsUI();
     if(!state.currentPath){ const first=Object.keys(datasets)[0]; if(first){ state.currentPath=first; state.index=0; save(K.STATE,state);} }
-    loadCurrentQuestion(); renderHistory(); refreshDatasetsUI(); try{ renderCatalogTree(); }catch(e){}
-    el.delaysInfo.textContent = `現在の遅延設定: 日→英 ${settings.delayJaToEn}s, 次の問題まで ${settings.delayBetweenQs}s`;
+    loadCurrentQuestion(); refreshAll(); try{ renderCatalogTree(); }catch(e){}
   }
   start();
 
