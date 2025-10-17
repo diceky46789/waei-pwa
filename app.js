@@ -408,7 +408,22 @@
   }
   function refreshDatasetsUI(){ renderDatasetList(); try{ renderCatalogTree(); }catch(e){} }
 
-  // Catalog (tree) + list + playback with autoscroll
+  
+  // Start practice at a specific real index (works with ordered/random modes)
+  function startPracticeAt(path, realIdx){
+    if(!datasets[path]) return;
+    state.currentPath = path;
+    // ensure orderCache according to mode
+    orderCache[path] = null; // reset so getOrder() regenerates if random
+    save(K.STATE, state);
+    const ord = getOrder(path);
+    const pos = Math.max(0, ord.indexOf(realIdx));
+    state.index = pos >= 0 ? pos : 0;
+    save(K.STATE, state);
+    switchTo('practice');
+    loadCurrentQuestion();
+  }
+// Catalog (tree) + list + playback with autoscroll
   let catalogPath=null, catalogAbort={stop:false}, catalogPlayingIdx=-1;
   function buildTree(paths){
     const root={}; for(const p of paths){ const parts=p.split('/').filter(Boolean); let node=root; for(let i=0;i<parts.length;i++){ const part=parts[i]; node[part]=node[part]||{__children__:{}, __full__: parts.slice(0,i+1).join('/')}; node=node[part].__children__; } } return root;
@@ -433,8 +448,10 @@
       const head=document.createElement('div'); head.className='hist-top';
       const title=document.createElement('div'); title.className='hist-title'; title.textContent=`#${idx+1}`;
       const act=document.createElement('div'); act.className='hist-actions';
-      const btn=document.createElement('button'); btn.textContent='この問題を再生'; btn.addEventListener('click', ()=> playOneAtIndex(idx));
-      act.appendChild(btn); head.appendChild(title); head.appendChild(act);
+      
+      const btn=document.createElement('button'); btn.textContent='この問題を再生'; btn.addEventListener('click', ()=> playOneAtIndex(idx)); act.appendChild(btn);
+      const btn2=document.createElement('button'); btn2.textContent='この問題で練習'; btn2.addEventListener('click', ()=> startPracticeAt(catalogPath, idx)); act.appendChild(btn2);
+ head.appendChild(title); head.appendChild(act);
       const jp=document.createElement('div'); jp.textContent=it.jp; jp.className='bold';
       const en=document.createElement('div'); en.textContent=it.en;
       con.appendChild(head); con.appendChild(jp); con.appendChild(en);
