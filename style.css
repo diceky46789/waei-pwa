@@ -77,3 +77,6 @@ button:active{ transform:translateY(1px); }
 
 /* Drag insertion caret */
 .drop-caret{ width:2px; background:var(--accent); height:1.8em; display:inline-block; align-self:center; }
+
+/* Search highlight */
+mark.hl{ background:#fff3b0; padding:0 2px; border-radius:3px; }
