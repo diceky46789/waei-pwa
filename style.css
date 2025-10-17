@@ -74,3 +74,6 @@ button:active{ transform:translateY(1px); }
 /* Danger (Delete) */
 .danger{ background:#fff; color:#b00020; border:1px solid #ef4444; }
 .danger:active{ transform:translateY(1px); }
+
+/* Drag insertion caret */
+.drop-caret{ width:2px; background:var(--accent); height:1.8em; display:inline-block; align-self:center; }

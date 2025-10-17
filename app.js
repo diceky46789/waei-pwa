@@ -1,4 +1,4 @@
-/* 和英正順アプリ v10 - Dataset delete + all prior features */
+/* 和英正順アプリ v11 - Precise drag-to-insert caret (other specs unchanged) */
 (function(){
   'use strict';
 
@@ -159,25 +159,50 @@
     el.delaysInfo.textContent = `現在の遅延設定: 日→英 ${settings.delayJaToEn}s, 次の問題まで ${settings.delayBetweenQs}s`;
   }
 
-  // Drag & drop + tap
+  // Drag & drop + tap (with insertion caret)
   let dragInfo=null;
+  const dropCaret = document.createElement('div');
+  dropCaret.className = 'drop-caret';
+
+  function containerAtPoint(x,y){
+    const ansR=el.answerArea.getBoundingClientRect(), bankR=el.wordBank.getBoundingClientRect();
+    if(x>ansR.left && x<ansR.right && y>ansR.top && y<ansR.bottom) return el.answerArea;
+    if(x>bankR.left && x<bankR.right && y>bankR.top && y<bankR.bottom) return el.wordBank;
+    return null;
+  }
+  function placeCaret(container, x){
+    const kids=[...container.children].filter(c=> c.classList && c.classList.contains('token') && (!dragInfo || c!==dragInfo.el));
+    let placed=false;
+    for(const c of kids){
+      const r=c.getBoundingClientRect();
+      if(x < r.left + r.width/2){ container.insertBefore(dropCaret, c); placed=true; break; }
+    }
+    if(!placed) container.appendChild(dropCaret);
+  }
+  function clearCaret(){ if(dropCaret.parentElement) dropCaret.parentElement.removeChild(dropCaret); }
+
   function makeDraggable(tokenEl){
-    tokenEl.addEventListener('pointerdown', (ev)=>{ tokenEl.setPointerCapture(ev.pointerId); dragInfo={el:tokenEl}; tokenEl.classList.add('dragging'); });
+    tokenEl.addEventListener('pointerdown', (ev)=>{
+      tokenEl.setPointerCapture(ev.pointerId);
+      dragInfo={el:tokenEl};
+      tokenEl.classList.add('dragging');
+    });
     tokenEl.addEventListener('pointermove', (ev)=>{
       if(!dragInfo) return;
       const x=ev.clientX, y=ev.clientY;
-      const ansR=el.answerArea.getBoundingClientRect(), bankR=el.wordBank.getBoundingClientRect();
-      if(x>ansR.left && x<ansR.right && y>ansR.top && y<ansR.bottom){
-        let placed=false; const kids=[...el.answerArea.children].filter(c=>c.classList.contains('token'));
-        for(const c of kids){ const r=c.getBoundingClientRect(); if(x < r.left + r.width/2){ el.answerArea.insertBefore(tokenEl, c); placed=true; break; } }
-        if(!placed) el.answerArea.appendChild(tokenEl);
-      }else if(x>bankR.left && x<bankR.right && y>bankR.top && y<bankR.bottom){
-        let placed=false; const kids=[...el.wordBank.children].filter(c=>c.classList.contains('token'));
-        for(const c of kids){ const r=c.getBoundingClientRect(); if(x < r.left + r.width/2){ el.wordBank.insertBefore(tokenEl, c); placed=true; break; } }
-        if(!placed) el.wordBank.appendChild(tokenEl);
-      }
+      const cont = containerAtPoint(x,y);
+      if(cont){ placeCaret(cont, x); }
+      else { clearCaret(); }
     });
-    tokenEl.addEventListener('pointerup', ()=>{ if(dragInfo){ tokenEl.classList.remove('dragging'); dragInfo=null; } });
+    tokenEl.addEventListener('pointerup', ()=>{
+      if(!dragInfo) return;
+      if(dropCaret.parentElement){
+        dropCaret.parentElement.insertBefore(tokenEl, dropCaret);
+        clearCaret();
+      }
+      tokenEl.classList.remove('dragging');
+      dragInfo=null;
+    });
   }
   function createToken(text, cls){
     const t=document.createElement('button'); t.type='button'; t.className='token '+cls; t.textContent=text;
@@ -321,7 +346,6 @@
         delete datasets[path];
         save(K.DATASETS, datasets);
         delete orderCache[path];
-        // If current practice dataset is removed, fallback
         if(state.currentPath === path){
           const keys = Object.keys(datasets);
           state.currentPath = keys.length ? keys[0] : null;
@@ -329,7 +353,6 @@
           save(K.STATE, state);
           loadCurrentQuestion();
         }
-        // If catalog is on this path, reset selection
         try{
           if(typeof catalogPath !== 'undefined' && catalogPath === path){
             catalogPath = null;
