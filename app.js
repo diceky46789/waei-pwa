@@ -1,4 +1,4 @@
-/* 和英正順アプリ v15 - Fixes + in-tab search + precise drag (specs unchanged) */
+/* 和英正順アプリ v15 + repeat toggle for catalog play (specs unchanged) */
 (function(){
   'use strict';
 
@@ -55,6 +55,7 @@
     catalogSearch: document.getElementById('catalogSearch'),
     catalogSearchClear: document.getElementById('catalogSearchClear'),
     catalogSearchInfo: document.getElementById('catalogSearchInfo'),
+    catalogRepeat: document.getElementById('catalogRepeat'),
     // History search
     historySearch: document.getElementById('historySearch'),
     historySearchClear: document.getElementById('historySearchClear'),
@@ -516,14 +517,20 @@
   }
   async function playAll(path){
     if(!path || !datasets[path] || !datasets[path].items.length){ el.catalogStatus.textContent='再生するデータがありません。'; return; }
-    el.catalogStatus.textContent='連続再生中…'; catalogAbort.stop=false;
+    catalogAbort.stop=false;
     const d2=Math.max(0.5,Math.min(10,Number(el.delayBetweenQs.value||settings.delayBetweenQs)));
-    for(let i=0;i<datasets[path].items.length;i++){
-      if(catalogAbort.stop){ el.catalogStatus.textContent='停止しました。'; highlightCatalogPlaying(-1); return; }
-      await playOneAtIndex(i);
-      if(i<datasets[path].items.length-1){ await new Promise(r=>setTimeout(r,d2*1000)); }
-    }
-    el.catalogStatus.textContent='完了しました。'; highlightCatalogPlaying(-1);
+    const repeat = !!(el.catalogRepeat && el.catalogRepeat.checked);
+    el.catalogStatus.textContent = repeat ? '連続再生中…（リピート）' : '連続再生中…';
+    do{
+      for(let i=0;i<datasets[path].items.length;i++){
+        if(catalogAbort.stop){ el.catalogStatus.textContent='停止しました。'; highlightCatalogPlaying(-1); return; }
+        await playOneAtIndex(i);
+        if(i<datasets[path].items.length-1){ await new Promise(r=>setTimeout(r,d2*1000)); }
+      }
+      if(!repeat) break;
+    }while(!catalogAbort.stop);
+    el.catalogStatus.textContent = catalogAbort.stop ? '停止しました。' : (repeat ? 'リピート停止中…' : '完了しました。');
+    highlightCatalogPlaying(-1);
   }
   el.catalogPlayAll && el.catalogPlayAll.addEventListener('click', ()=>{ if(!catalogPath){ el.catalogStatus.textContent='データセットを選択してください。'; return; } playAll(catalogPath); });
   el.catalogStop && el.catalogStop.addEventListener('click', ()=>{ catalogAbort.stop=true; });
