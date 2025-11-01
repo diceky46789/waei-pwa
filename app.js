@@ -1,4 +1,4 @@
-/* 和英正順アプリ v15 - Fixes + in-tab search + precise drag (specs unchanged) */
+/* 和英正順アプリ v17 (Catalog Repeat + Random) */
 (function(){
   'use strict';
 
@@ -55,6 +55,8 @@
     catalogSearch: document.getElementById('catalogSearch'),
     catalogSearchClear: document.getElementById('catalogSearchClear'),
     catalogSearchInfo: document.getElementById('catalogSearchInfo'),
+    catalogRepeat: document.getElementById('catalogRepeat'),
+    catalogRandom: document.getElementById('catalogRandom'),
     // History search
     historySearch: document.getElementById('historySearch'),
     historySearchClear: document.getElementById('historySearchClear'),
@@ -166,7 +168,7 @@
     el.delaysInfo.textContent = `現在の遅延設定: 日→英 ${settings.delayJaToEn}s, 次の問題まで ${settings.delayBetweenQs}s`;
   }
 
-  // Drag & drop + tap (row-aware precise insertion caret)
+  // Drag & drop + tap
   let dragInfo=null;
   const dropCaret = document.createElement('div');
   dropCaret.className = 'drop-caret';
@@ -218,7 +220,7 @@
     gaps.push({idx:0, x: items[0].rect.left - 1});
     for(let i=0;i<items.length-1;i++){
       const mid = (items[i].rect.right + items[i+1].rect.left)/2;
-      gaps.push({idx:i+1, x: mid});
+      gaps.push({idx=i+1, x: mid});
     }
     gaps.push({idx:items.length, x: items[items.length-1].rect.right + 1});
     let best=gaps[0], bestD=Math.abs(x-gaps[0].x);
@@ -292,12 +294,12 @@
     }catch(_){ return src; }
   }
   let catalogQuery = '';
-  let historyQuery = '';
+  let historyFilter = 'all';
 
   function renderHistory(){
     el.historyList.innerHTML='';
     const base = history.filter(h => historyFilter==='all' ? true : h.grade === historyFilter);
-    const q = (historyQuery||'').trim().toLowerCase();
+    const q = (document.getElementById('historySearch')?.value || '').trim().toLowerCase();
     const list = base.filter(h => {
       if(!q) return true;
       const hay = (h.jp + ' ' + h.en + ' ' + (h.ex||'') + ' ' + (h.user||'')).toLowerCase();
@@ -313,15 +315,15 @@
       const speak=document.createElement('button'); speak.textContent='読み上げ'; speak.addEventListener('click', async ()=>{ await say(h.jp,'ja-JP',settings.jaVoiceURI||el.jaVoice.value); await new Promise(r=>setTimeout(r, Math.max(0.5,settings.delayJaToEn)*1000)); await say(h.en,'en-US',settings.enVoiceURI||el.enVoice.value); });
       actions.appendChild(again); actions.appendChild(speak);
       top.appendChild(title); top.appendChild(actions);
-      const jp=document.createElement('div'); jp.className='bold'; jp.innerHTML=highlightHTML(h.jp, historyQuery||'');
-      const en=document.createElement('div'); en.innerHTML=highlightHTML(h.en, historyQuery||'');
-      const user=document.createElement('div'); user.innerHTML='あなたの解答: ' + highlightHTML(h.user||'(未入力)', historyQuery||'');
-      const ex=document.createElement('div'); ex.className='hint'; ex.innerHTML=highlightHTML(h.ex||'', historyQuery||'');
+      const jp=document.createElement('div'); jp.className='bold'; jp.innerHTML=highlightHTML(h.jp, q);
+      const en=document.createElement('div'); en.innerHTML=highlightHTML(h.en, q);
+      const user=document.createElement('div'); user.innerHTML='あなたの解答: ' + highlightHTML(h.user||'(未入力)', q);
+      const ex=document.createElement('div'); ex.className='hint'; ex.innerHTML=highlightHTML(h.ex||'', q);
       con.appendChild(top); con.appendChild(jp); con.appendChild(en); con.appendChild(user); con.appendChild(ex);
       el.historyList.appendChild(con);
     });
     if(el.historySearchInfo){
-      el.historySearchInfo.textContent = `表示: ${list.length} / 全${base.length}件` + (historyQuery? ` （検索: "${historyQuery}"）` : '');
+      el.historySearchInfo.textContent = `表示: ${list.length} / 全${base.length}件` + (document.getElementById('historySearch')?.value ? f' （検索: "{document.getElementById("historySearch").value}"）' : '');
     }
   }
   function switchTo(tab){ document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab)); document.querySelectorAll('.tab').forEach(sec=>sec.classList.toggle('active', sec.id===tab)); }
@@ -337,7 +339,7 @@
     await say(it.jp,'ja-JP',settings.jaVoiceURI||el.jaVoice.value);
     await new Promise(r=>setTimeout(r,d1*1000));
     await say(it.en,'en-US',settings.enVoiceURI||el.enVoice.value);
-    setTimeout(()=>{ nextQuestion(); }, d2*1000); // only on TTS
+    setTimeout(()=>{ nextQuestion(); }, d2*1000);
   });
   el.checkBtn.addEventListener('click', ()=>{
     const it=getCurrentItem(); if(!it) return;
@@ -351,7 +353,6 @@
   });
   el.clearHistBtn.addEventListener('click', ()=>{ if(confirm('履歴を全て削除しますか？')){ history=[]; save(K.HISTORY,history); renderHistory(); }});
 
-  // Self-eval buttons
   if(el.selfEval){
     el.selfEval.addEventListener('click', (e)=>{
       const b = e.target.closest('.sev-btn'); if(!b) return;
@@ -366,9 +367,16 @@
     });
   }
 
-  // History filter buttons + search events
-  if(el.historySearch){ el.historySearch.addEventListener('input', ()=>{ historyQuery = el.historySearch.value; renderHistory(); }); }
-  if(el.historySearchClear){ el.historySearchClear.addEventListener('click', ()=>{ historyQuery=''; el.historySearch.value=''; renderHistory(); }); }
+  // History filter + search
+  if(document.getElementById('historySearch')){
+    document.getElementById('historySearch').addEventListener('input', renderHistory);
+  }
+  if(document.getElementById('historySearchClear')){
+    document.getElementById('historySearchClear').addEventListener('click', ()=>{
+      const i=document.getElementById('historySearch'); if(i){ i.value=''; }
+      renderHistory();
+    });
+  }
   if(el.histFilters){
     el.histFilters.addEventListener('click', (e)=>{
       const b = e.target.closest('.hf-btn'); if(!b) return;
@@ -387,7 +395,7 @@
     el.delaysInfo.textContent = `現在の遅延設定: 日→英 ${settings.delayJaToEn}s, 次の問題まで ${settings.delayBetweenQs}s`;
   });
 
-  // Upload & Dataset list (with delete)
+  // Upload & Dataset list
   el.uploadCsvBtn.addEventListener('click', async ()=>{
     const files=el.csvFiles.files; const folder=(el.folderPath.value||'').trim().replace(/^\/+|\/+$/g,'');
     if(!files.length){ el.uploadLog.textContent='CSVファイルを選択してください。'; return; }
@@ -415,15 +423,10 @@
       const del=document.createElement('button'); del.textContent='削除'; del.className='danger';
       del.addEventListener('click', ()=>{
         if(!confirm(`${path} を削除しますか？（データセットのみ削除。履歴は残ります）`)) return;
-        delete datasets[path];
-        save(K.DATASETS, datasets);
-        delete orderCache[path];
+        delete datasets[path]; save(K.DATASETS, datasets); delete orderCache[path];
         if(state.currentPath === path){
           const keys = Object.keys(datasets);
-          state.currentPath = keys.length ? keys[0] : null;
-          state.index = 0;
-          save(K.STATE, state);
-          loadCurrentQuestion();
+          state.currentPath = keys.length ? keys[0] : null; state.index = 0; save(K.STATE, state); loadCurrentQuestion();
         }
         try{
           if(typeof catalogPath !== 'undefined' && catalogPath === path){
@@ -440,30 +443,31 @@
   }
   function refreshDatasetsUI(){ renderDatasetList(); try{ renderCatalogTree(); }catch(e){} }
 
-  // Catalog (tree) + list + playback with autoscroll + start practice at index
-  let catalogPath=null, catalogAbort={stop:false}, catalogPlayingIdx=-1;
+  // Catalog tree + list + playback
+  let catalogPath=null, catalogAbort={stop:false};
   function buildTree(paths){
     const root={}; for(const p of paths){ const parts=p.split('/').filter(Boolean); let node=root; for(let i=0;i<parts.length;i++){ const part=parts[i]; node[part]=node[part]||{__children__:{}, __full__: parts.slice(0,i+1).join('/')}; node=node[part].__children__; } } return root;
   }
-  // Start practice at a specific real index (works with ordered/random modes)
   function startPracticeAt(path, realIdx){
     if(!datasets[path]) return;
-    state.currentPath = path;
-    orderCache[path] = null; // reset so getOrder() regenerates (for random mode)
-    save(K.STATE, state);
-    const ord = getOrder(path);
-    const pos = Math.max(0, ord.indexOf(realIdx));
-    state.index = pos >= 0 ? pos : 0;
-    save(K.STATE, state);
-    switchTo('practice');
-    loadCurrentQuestion();
+    state.currentPath = path; orderCache[path] = null; save(K.STATE, state);
+    const ord = getOrder(path); const pos = Math.max(0, ord.indexOf(realIdx));
+    state.index = pos >= 0 ? pos : 0; save(K.STATE, state);
+    switchTo('practice'); loadCurrentQuestion();
   }
   function renderCatalogTree(){
     const paths=Object.keys(datasets); const tree=buildTree(paths); const c=el.catalogTree; if(!c) return; c.innerHTML='';
     (function walk(node, parent){
       Object.keys(node).sort().forEach(name=>{
-        const n=node[name]; const full=n.__full__; const children=n.__children__; const hasChildren=children&&Object.keys(children).length>0;
-        const item=document.createElement('div'); item.className='tree-item'; item.textContent=name; if(hasChildren){ parent.appendChild(item); const folder=document.createElement('div'); folder.className='tree-folder'; parent.appendChild(folder); walk(children, folder); } else { item.dataset.path=full; parent.appendChild(item); item.addEventListener('click', ()=>{ catalogPath=item.dataset.path; highlightCatalogPath(); renderCatalogList(); }); }
+        const n=node[name]; const full=n.__full__; const children=n.__children__;
+        const hasChildren=children&&Object.keys(children).length>0;
+        const item=document.createElement('div'); item.className='tree-item'; item.textContent=name;
+        if(hasChildren){
+          parent.appendChild(item); const folder=document.createElement('div'); folder.className='tree-folder'; parent.appendChild(folder); walk(children, folder);
+        } else {
+          item.dataset.path=full; parent.appendChild(item);
+          item.addEventListener('click', ()=>{ catalogPath=item.dataset.path; highlightCatalogPath(); renderCatalogList(); });
+        }
       });
     })(tree, c);
     highlightCatalogPath();
@@ -496,11 +500,6 @@
       el.catalogSearchInfo.textContent = `表示: ${shown} / 全${datasets[catalogPath].items.length}件` + (catalogQuery? ` （検索: "${catalogQuery}"）` : '');
     }
   }
-  function highlightCatalogPlaying(idx){
-    catalogPlayingIdx = idx;
-    const nodes=[...el.catalogList.children];
-    nodes.forEach((n,i)=> n.classList.toggle('playing', i===idx));
-  }
   function scrollCatalogTo(idx){
     const node=el.catalogList.children[idx];
     if(node && node.scrollIntoView){ try{ node.scrollIntoView({behavior:'smooth', block:'center'}); }catch(e){ node.scrollIntoView(); } }
@@ -508,7 +507,8 @@
   async function playOneAtIndex(i){
     if(!catalogPath || !datasets[catalogPath] || !datasets[catalogPath].items[i]) return;
     const item=datasets[catalogPath].items[i];
-    highlightCatalogPlaying(i); scrollCatalogTo(i);
+    [...el.catalogList.children].forEach((n,ix)=> n.classList.toggle('playing', ix===i));
+    scrollCatalogTo(i);
     const d1=Math.max(0.5,Math.min(10,Number(el.delayJaToEn.value||settings.delayJaToEn)));
     await say(item.jp,'ja-JP',settings.jaVoiceURI||el.jaVoice.value);
     await new Promise(r=>setTimeout(r,d1*1000));
@@ -516,17 +516,29 @@
   }
   async function playAll(path){
     if(!path || !datasets[path] || !datasets[path].items.length){ el.catalogStatus.textContent='再生するデータがありません。'; return; }
-    el.catalogStatus.textContent='連続再生中…'; catalogAbort.stop=false;
+    let stopFlag=false; catalogAbort={stop:false};
     const d2=Math.max(0.5,Math.min(10,Number(el.delayBetweenQs.value||settings.delayBetweenQs)));
-    for(let i=0;i<datasets[path].items.length;i++){
-      if(catalogAbort.stop){ el.catalogStatus.textContent='停止しました。'; highlightCatalogPlaying(-1); return; }
-      await playOneAtIndex(i);
-      if(i<datasets[path].items.length-1){ await new Promise(r=>setTimeout(r,d2*1000)); }
-    }
-    el.catalogStatus.textContent='完了しました。'; highlightCatalogPlaying(-1);
+    const repeat = !!(el.catalogRepeat && el.catalogRepeat.checked);
+    const random = !!(el.catalogRandom && el.catalogRandom.checked);
+    el.catalogStatus.textContent = repeat ? (random ? '連続再生中…（ランダム・リピート）' : '連続再生中…（リピート）')
+                                          : (random ? '連続再生中…（ランダム）' : '連続再生中…');
+    do{
+      let order = Array.from({length: datasets[path].items.length}, (_,i)=>i);
+      if(random){ order = shuffle(order); }
+      for(let k=0; k<order.length; k++){
+        if(catalogAbort.stop){ stopFlag=true; break; }
+        const i = order[k];
+        await playOneAtIndex(i);
+        if(k<order.length-1){ await new Promise(r=>setTimeout(r,d2*1000)); }
+      }
+      if(stopFlag || !repeat) break;
+    }while(true);
+    el.catalogStatus.textContent = catalogAbort.stop ? '停止しました。' : (repeat ? 'リピート停止中…' : '完了しました。');
+    [...el.catalogList.children].forEach(n=>n.classList.remove('playing'));
   }
   el.catalogPlayAll && el.catalogPlayAll.addEventListener('click', ()=>{ if(!catalogPath){ el.catalogStatus.textContent='データセットを選択してください。'; return; } playAll(catalogPath); });
   el.catalogStop && el.catalogStop.addEventListener('click', ()=>{ catalogAbort.stop=true; });
+
   if(el.catalogSearch){ el.catalogSearch.addEventListener('input', ()=>{ catalogQuery = el.catalogSearch.value; renderCatalogList(); }); }
   if(el.catalogSearchClear){ el.catalogSearchClear.addEventListener('click', ()=>{ catalogQuery=''; el.catalogSearch.value=''; renderCatalogList(); }); }
 

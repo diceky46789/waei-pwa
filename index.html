@@ -42,7 +42,6 @@
         </div>
         <div class="result" id="resultBox"></div>
         <div class="explain" id="explainBox"></div>
-        <!-- Self-evaluation (shown after Check) -->
         <div id="selfEval" class="self-eval hidden">
           <span class="hint">自己評価:</span>
           <div class="self-eval-buttons">
@@ -82,8 +81,13 @@
       <div class="controls-row">
         <button id="catalogPlayAll" class="primary">選択データセットを連続再生</button>
         <button id="catalogStop" class="secondary">停止</button>
+        <label class="hint" style="display:flex;align-items:center;gap:6px;">
+          <input type="checkbox" id="catalogRepeat"> リピート
+        </label>
+        <label class="hint" style="display:flex;align-items:center;gap:6px;">
+          <input type="checkbox" id="catalogRandom"> ランダム
+        </label>
       </div>
-      <!-- In-tab search -->
       <div class="controls-row">
         <input type="search" id="catalogSearch" placeholder="この一覧から単語を検索">
         <button id="catalogSearchClear" class="secondary">クリア</button>
@@ -106,7 +110,6 @@
         </div>
         <button id="clearHistBtn" class="secondary">履歴を全削除</button>
       </div>
-      <!-- In-tab search -->
       <div class="controls-row">
         <input type="search" id="historySearch" placeholder="履歴から単語を検索">
         <button id="historySearchClear" class="secondary">クリア</button>
