@@ -1,4 +1,5 @@
-/* 和英正順アプリ v15 - Fixes + in-tab search + precise drag (specs unchanged) */
+/* 和英正順アプリ v16
+   - Catalog 連続再生: リピート/ランダム切替を追加（他仕様は不変） */
 (function(){
   'use strict';
 
@@ -55,6 +56,8 @@
     catalogSearch: document.getElementById('catalogSearch'),
     catalogSearchClear: document.getElementById('catalogSearchClear'),
     catalogSearchInfo: document.getElementById('catalogSearchInfo'),
+    catalogRepeat: document.getElementById('catalogRepeat'),
+    catalogRandom: document.getElementById('catalogRandom'),
     // History search
     historySearch: document.getElementById('historySearch'),
     historySearchClear: document.getElementById('historySearchClear'),
@@ -166,7 +169,7 @@
     el.delaysInfo.textContent = `現在の遅延設定: 日→英 ${settings.delayJaToEn}s, 次の問題まで ${settings.delayBetweenQs}s`;
   }
 
-  // Drag & drop + tap (row-aware precise insertion caret)
+  // Drag & drop + tap
   let dragInfo=null;
   const dropCaret = document.createElement('div');
   dropCaret.className = 'drop-caret';
@@ -337,7 +340,7 @@
     await say(it.jp,'ja-JP',settings.jaVoiceURI||el.jaVoice.value);
     await new Promise(r=>setTimeout(r,d1*1000));
     await say(it.en,'en-US',settings.enVoiceURI||el.enVoice.value);
-    setTimeout(()=>{ nextQuestion(); }, d2*1000); // only on TTS
+    setTimeout(()=>{ nextQuestion(); }, d2*1000);
   });
   el.checkBtn.addEventListener('click', ()=>{
     const it=getCurrentItem(); if(!it) return;
@@ -350,8 +353,6 @@
     el.selfEval && el.selfEval.classList.remove('hidden');
   });
   el.clearHistBtn.addEventListener('click', ()=>{ if(confirm('履歴を全て削除しますか？')){ history=[]; save(K.HISTORY,history); renderHistory(); }});
-
-  // Self-eval buttons
   if(el.selfEval){
     el.selfEval.addEventListener('click', (e)=>{
       const b = e.target.closest('.sev-btn'); if(!b) return;
@@ -366,7 +367,8 @@
     });
   }
 
-  // History filter buttons + search events
+  // History filter + search
+  let historyFilter = 'all';
   if(el.historySearch){ el.historySearch.addEventListener('input', ()=>{ historyQuery = el.historySearch.value; renderHistory(); }); }
   if(el.historySearchClear){ el.historySearchClear.addEventListener('click', ()=>{ historyQuery=''; el.historySearch.value=''; renderHistory(); }); }
   if(el.histFilters){
@@ -387,7 +389,7 @@
     el.delaysInfo.textContent = `現在の遅延設定: 日→英 ${settings.delayJaToEn}s, 次の問題まで ${settings.delayBetweenQs}s`;
   });
 
-  // Upload & Dataset list (with delete)
+  // Upload & Dataset list
   el.uploadCsvBtn.addEventListener('click', async ()=>{
     const files=el.csvFiles.files; const folder=(el.folderPath.value||'').trim().replace(/^\/+|\/+$/g,'');
     if(!files.length){ el.uploadLog.textContent='CSVファイルを選択してください。'; return; }
@@ -440,16 +442,15 @@
   }
   function refreshDatasetsUI(){ renderDatasetList(); try{ renderCatalogTree(); }catch(e){} }
 
-  // Catalog (tree) + list + playback with autoscroll + start practice at index
+  // Catalog tree + list + playback
   let catalogPath=null, catalogAbort={stop:false}, catalogPlayingIdx=-1;
   function buildTree(paths){
     const root={}; for(const p of paths){ const parts=p.split('/').filter(Boolean); let node=root; for(let i=0;i<parts.length;i++){ const part=parts[i]; node[part]=node[part]||{__children__:{}, __full__: parts.slice(0,i+1).join('/')}; node=node[part].__children__; } } return root;
   }
-  // Start practice at a specific real index (works with ordered/random modes)
   function startPracticeAt(path, realIdx){
     if(!datasets[path]) return;
     state.currentPath = path;
-    orderCache[path] = null; // reset so getOrder() regenerates (for random mode)
+    orderCache[path] = null;
     save(K.STATE, state);
     const ord = getOrder(path);
     const pos = Math.max(0, ord.indexOf(realIdx));
@@ -516,14 +517,25 @@
   }
   async function playAll(path){
     if(!path || !datasets[path] || !datasets[path].items.length){ el.catalogStatus.textContent='再生するデータがありません。'; return; }
-    el.catalogStatus.textContent='連続再生中…'; catalogAbort.stop=false;
+    catalogAbort.stop=false;
     const d2=Math.max(0.5,Math.min(10,Number(el.delayBetweenQs.value||settings.delayBetweenQs)));
-    for(let i=0;i<datasets[path].items.length;i++){
-      if(catalogAbort.stop){ el.catalogStatus.textContent='停止しました。'; highlightCatalogPlaying(-1); return; }
-      await playOneAtIndex(i);
-      if(i<datasets[path].items.length-1){ await new Promise(r=>setTimeout(r,d2*1000)); }
-    }
-    el.catalogStatus.textContent='完了しました。'; highlightCatalogPlaying(-1);
+    const repeat = !!(el.catalogRepeat && el.catalogRepeat.checked);
+    const random = !!(el.catalogRandom && el.catalogRandom.checked);
+    el.catalogStatus.textContent = repeat ? (random ? '連続再生中…（ランダム・リピート）' : '連続再生中…（リピート）')
+                                          : (random ? '連続再生中…（ランダム）' : '連続再生中…');
+    do{
+      let order = Array.from({length: datasets[path].items.length}, (_,i)=>i);
+      if(random){ order = shuffle(order); }
+      for(let k=0; k<order.length; k++){
+        const i = order[k];
+        if(catalogAbort.stop){ el.catalogStatus.textContent='停止しました。'; highlightCatalogPlaying(-1); return; }
+        await playOneAtIndex(i);
+        if(k<order.length-1){ await new Promise(r=>setTimeout(r,d2*1000)); }
+      }
+      if(!repeat) break;
+    }while(!catalogAbort.stop);
+    el.catalogStatus.textContent = catalogAbort.stop ? '停止しました。' : (repeat ? 'リピート停止中…' : '完了しました。');
+    highlightCatalogPlaying(-1);
   }
   el.catalogPlayAll && el.catalogPlayAll.addEventListener('click', ()=>{ if(!catalogPath){ el.catalogStatus.textContent='データセットを選択してください。'; return; } playAll(catalogPath); });
   el.catalogStop && el.catalogStop.addEventListener('click', ()=>{ catalogAbort.stop=true; });
