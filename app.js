@@ -1,5 +1,5 @@
 
-/* 和英正順アプリ v22 (BG play start fix + Unicode tokenize + TTS stability) */
+/* 和英正順アプリ v23 (Tokenizer parse-safe + BG/TTS stability) */
 (function(){
   'use strict';
 
@@ -171,11 +171,20 @@
     return rows
   }
 
-  // Robust Unicode tokenize
+  // Parse-safe tokenizer (no literal \p{..} in source); try runtime property escapes, else fallback to Latin ranges
+  function tokenizerRegex(){
+    try{
+      return new RegExp('[\\p{L}\\p{M}\\p{N}]+(?:[’\'][\\p{L}\\p{M}\\p{N}]+)?|[.,!?;:()\\"“”‘’…—–-]','gu')
+    }catch(e){
+      // Latin + extended + combining marks + digits
+      return /[A-Za-z\u00C0-\u024F\u1E00-\u1EFF\u0300-\u036F0-9]+(?:[’'][A-Za-z\u00C0-\u024F\u1E00-\u1EFF\u0300-\u036F0-9]+)?|[.,!?;:()\"“”‘’…—–-]/g
+    }
+  }
+  const TOKEN_RE = tokenizerRegex()
   function tokenize(en){
     if(!en) return []
     try{
-      const m = en.match(/[\p{L}\p{M}\p{N}]+(?:[’'][\p{L}\p{M}\p{N}]+)?|[.,!?;:()"“”‘’…—–-]/gu)
+      const m = en.match(TOKEN_RE)
       if(m && m.length) return m.filter(t=>t && t.trim().length>0)
     }catch(_ ){}
     // fallback
