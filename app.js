@@ -1,4 +1,4 @@
-/* 和英正順アプリ v18 (Catalog Repeat + Random, parse-fix) */
+/* 和英正順アプリ v19 (Background playback experimental) */
 (function(){
   'use strict';
 
@@ -57,6 +57,8 @@
     catalogSearchInfo: document.getElementById('catalogSearchInfo'),
     catalogRepeat: document.getElementById('catalogRepeat'),
     catalogRandom: document.getElementById('catalogRandom'),
+    catalogBg: document.getElementById('catalogBg'),
+    bgSilence: document.getElementById('bgSilence'),
     // History search
     historySearch: document.getElementById('historySearch'),
     historySearchClear: document.getElementById('historySearchClear'),
@@ -72,6 +74,45 @@
   let orderCache = {};
   let historyFilter = 'all';
   let pendingHistoryId = null;
+
+  // Background audio setup (silent wav to keep audio session active)
+  if(el.bgSilence){
+    el.bgSilence.src = 'data:audio/wav;base64,UklGRmQfAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YUAfAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==';
+    el.bgSilence.volume = 0.01; // very low (avoid mute)
+  }
+
+  // Media Session
+  let catalogPaused = false;
+  function setMediaSession(){
+    if('mediaSession' in navigator){
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: 'データセット連続再生',
+        artist: '和英正順アプリ',
+        album: 'Catalog Player'
+      });
+      try{ navigator.mediaSession.setActionHandler('play', ()=>resumeCatalog()); }catch(_){}
+      try{ navigator.mediaSession.setActionHandler('pause', ()=>pauseCatalog()); }catch(_){}
+      try{ navigator.mediaSession.setActionHandler('stop', ()=>stopCatalog()); }catch(_){}
+    }
+  }
+  function pauseCatalog(){
+    catalogPaused = true;
+    try{ if(speechSynthesis.speaking) speechSynthesis.pause(); }catch(_ ){}
+    try{ el.bgSilence && el.bgSilence.pause(); }catch(_ ){}
+    if(el.catalogStatus) el.catalogStatus.textContent = '一時停止中…';
+  }
+  function resumeCatalog(){
+    catalogPaused = false;
+    try{ speechSynthesis.resume(); }catch(_ ){}
+    if(el.catalogBg && el.catalogBg.checked && el.bgSilence){
+      el.bgSilence.play().catch(()=>{});
+    }
+  }
+  function stopCatalog(){
+    catalogAbort.stop = true;
+    pauseCatalog();
+    try{ if(el.bgSilence) { el.bgSilence.pause(); el.bgSilence.currentTime = 0; } }catch(_ ){}
+  }
 
   function save(key, value){ localStorage.setItem(key, JSON.stringify(value)); }
   function load(key){ try { return JSON.parse(localStorage.getItem(key)); } catch(e){ return null; } }
@@ -218,10 +259,7 @@
     const items = row.items;
     const gaps = [];
     gaps.push({idx:0, x: items[0].rect.left - 1});
-    for(let i=0;i<items.length-1;i++){
-      const mid = (items[i].rect.right + items[i+1].rect.left)/2;
-      gaps.push({idx:i+1, x: mid});
-    }
+    for(let i=0;i<items.length-1;i++){ const mid = (items[i].rect.right + items[i+1].rect.left)/2; gaps.push({idx:i+1, x: mid}); }
     gaps.push({idx:items.length, x: items[items.length-1].rect.right + 1});
     let best=gaps[0], bestD=Math.abs(x-gaps[0].x);
     for(let i=1;i<gaps.length;i++){ const d=Math.abs(x-gaps[i].x); if(d<bestD){ best=gaps[i]; bestD=d; } }
@@ -238,7 +276,7 @@
     });
     tokenEl.addEventListener('pointermove', (ev)=>{
       if(!dragInfo) return;
-      try{ ev.preventDefault(); }catch(_){}
+      try{ ev.preventDefault(); }catch(_ ){}
       const x=ev.clientX, y=ev.clientY;
       const cont = containerAtPoint(x,y);
       if(cont){ placeCaretSmart(cont, x, y); } else { clearCaret(); }
@@ -291,7 +329,7 @@
     try{
       const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'ig');
       return src.replace(re, m=>`<mark class="hl">${m}</mark>`);
-    }catch(_){ return src; }
+    }catch(_ ){ return src; }
   }
   let catalogQuery = '';
 
@@ -351,7 +389,7 @@
     renderHistory();
     el.selfEval && el.selfEval.classList.remove('hidden');
   });
-  el.clearHistBtn.addEventListener('click', ()=>{ if(confirm('履歴を全て削除しますか？')){ history=[]; save(K.HISTORY,history); renderHistory(); }});
+  el.clearHistBtn.addEventListener('click', ()=>{ if(confirm('履歴を全て削除しますか？')){ history=[]; save(K.HISTORY,history); renderHistory(); } });
 
   if(el.selfEval){
     el.selfEval.addEventListener('click', (e)=>{
@@ -434,7 +472,7 @@
             if(el.catalogList) el.catalogList.innerHTML='';
             if(el.catalogStatus) el.catalogStatus.textContent='データセットを選択してください。';
           }
-        }catch(_){}
+        }catch(_ ){}
         refreshDatasetsUI();
       });
       row.appendChild(pathSpan); row.appendChild(sel); row.appendChild(go); row.appendChild(del);
@@ -497,7 +535,7 @@
       shown++;
     });
     if(el.catalogSearchInfo){
-      el.catalogSearchInfo.textContent = `表示: ${shown} / 全${datasets[catalogPath].items.length}件` + (catalogQuery ? ` （検索: "${catalogQuery}"）` : '');
+      el.catalogSearchInfo.textContent = `表示: ${shown} / 全${datasets[catalogPath].items.length}件` + (catalogQuery? ` （検索: "${catalogQuery}"）` : '');
     }
   }
   function scrollCatalogTo(idx){
@@ -510,8 +548,12 @@
     [...el.catalogList.children].forEach((n,ix)=> n.classList.toggle('playing', ix===i));
     scrollCatalogTo(i);
     const d1=Math.max(0.5,Math.min(10,Number(el.delayJaToEn.value||settings.delayJaToEn)));
+    // pause wait
+    while(catalogPaused && !catalogAbort.stop){ await new Promise(r=>setTimeout(r,150)); }
     await say(item.jp,'ja-JP',settings.jaVoiceURI||el.jaVoice.value);
+    while(catalogPaused && !catalogAbort.stop){ await new Promise(r=>setTimeout(r,150)); }
     await new Promise(r=>setTimeout(r,d1*1000));
+    while(catalogPaused && !catalogAbort.stop){ await new Promise(r=>setTimeout(r,150)); }
     await say(item.en,'en-US',settings.enVoiceURI||el.enVoice.value);
   }
   async function playAll(path){
@@ -522,22 +564,37 @@
     const random = !!(el.catalogRandom && el.catalogRandom.checked);
     el.catalogStatus.textContent = repeat ? (random ? '連続再生中…（ランダム・リピート）' : '連続再生中…（リピート）')
                                           : (random ? '連続再生中…（ランダム）' : '連続再生中…');
+    setMediaSession();
+    // background keepalive
+    if(el.catalogBg && el.catalogBg.checked && el.bgSilence){
+      try{ await el.bgSilence.play(); }catch(_ ){}
+    }
     do{
       let order = Array.from({length: datasets[path].items.length}, (_,i)=>i);
       if(random){ order = shuffle(order); }
       for(let k=0; k<order.length; k++){
         if(catalogAbort.stop){ stopFlag=true; break; }
+        // wait pause
+        while(catalogPaused && !catalogAbort.stop){ await new Promise(r=>setTimeout(r,150)); }
         const i = order[k];
         await playOneAtIndex(i);
-        if(k<order.length-1){ await new Promise(r=>setTimeout(r,d2*1000)); }
+        if(k<order.length-1){
+          let t = d2*1000;
+          while(t>0 && !catalogAbort.stop){
+            while(catalogPaused && !catalogAbort.stop){ await new Promise(r=>setTimeout(r,150)); }
+            const step = Math.min(200, t); await new Promise(r=>setTimeout(r,step)); t -= step;
+          }
+        }
       }
       if(stopFlag || !repeat) break;
     }while(true);
+    // stop
+    try{ if(el.bgSilence){ el.bgSilence.pause(); el.bgSilence.currentTime=0; } }catch(_ ){}
     el.catalogStatus.textContent = catalogAbort.stop ? '停止しました。' : (repeat ? 'リピート停止中…' : '完了しました。');
     [...el.catalogList.children].forEach(n=>n.classList.remove('playing'));
   }
   el.catalogPlayAll && el.catalogPlayAll.addEventListener('click', ()=>{ if(!catalogPath){ el.catalogStatus.textContent='データセットを選択してください。'; return; } playAll(catalogPath); });
-  el.catalogStop && el.catalogStop.addEventListener('click', ()=>{ catalogAbort.stop=true; });
+  el.catalogStop && el.catalogStop.addEventListener('click', ()=>{ stopCatalog(); });
 
   if(el.catalogSearch){ el.catalogSearch.addEventListener('input', ()=>{ catalogQuery = el.catalogSearch.value; renderCatalogList(); }); }
   if(el.catalogSearchClear){ el.catalogSearchClear.addEventListener('click', ()=>{ catalogQuery=''; el.catalogSearch.value=''; renderCatalogList(); }); }
