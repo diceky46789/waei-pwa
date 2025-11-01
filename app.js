@@ -1,7 +1,20 @@
 
-/* 和英正順アプリ v23 (Tokenizer parse-safe + BG/TTS stability) */
+/* 和英正順アプリ v24 (Tokenizer parse-safe + BG/TTS stability) */
 (function(){
   'use strict';
+
+  
+// v24 global error catcher: surfaces fatal errors to status area (no UI change)
+window.addEventListener('error', function(e){
+  try{
+    var s = document.getElementById('catalogStatus') || document.getElementById('delaysInfo');
+    if(s && !s.__errShown){
+      s.__errShown = true;
+      s.textContent = 'エラー: ' + (e && e.message ? e.message : 'unknown');
+    }
+  }catch(_){}
+}, {once:true});
+
 
   const K = {
     DATASETS: 'woa.datasets.v2',
@@ -108,7 +121,7 @@
   let catalogPaused = false
   function setMediaSession(){
     if('mediaSession' in navigator){
-      navigator.mediaSession.metadata = new MediaMetadata({ title:'データセット連続再生', artist:'和英正順アプリ', album:'Catalog Player' })
+      try{ if('MediaMetadata' in window){ navigator.mediaSession.metadata = new window.MediaMetadata({ title:'データセット連続再生', artist:'和英正順アプリ', album:'Catalog Player' }) } }catch(_ ){}
       try{ navigator.mediaSession.setActionHandler('play', ()=>resumeCatalog()) }catch(_ ){}
       try{ navigator.mediaSession.setActionHandler('pause', ()=>pauseCatalog()) }catch(_ ){}
       try{ navigator.mediaSession.setActionHandler('stop', ()=>stopCatalog()) }catch(_ ){}
@@ -141,7 +154,7 @@
   function load(key){ try { return JSON.parse(localStorage.getItem(key)); } catch(e){ return null; } }
 
   // Tabs
-  document.querySelectorAll('.tab-btn').forEach(btn => {
+  Array.from(document.querySelectorAll('.tab-btn')).forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'))
       btn.classList.add('active')
@@ -410,10 +423,10 @@
   function switchTo(tab){ document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab)); document.querySelectorAll('.tab').forEach(sec=>sec.classList.toggle('active', sec.id===tab)); }
 
   // Event bindings
-  el.nextBtn.addEventListener('click', nextQuestion)
-  el.prevBtn.addEventListener('click', prevQuestion)
-  el.resetBtn.addEventListener('click', loadCurrentQuestion)
-  el.speakBtn.addEventListener('click', async ()=>{
+  el.nextBtn && el.nextBtn.addEventListener('click', nextQuestion)
+  el.prevBtn && el.prevBtn.addEventListener('click', prevQuestion)
+  el.resetBtn && el.resetBtn.addEventListener('click', loadCurrentQuestion)
+  el.speakBtn && el.speakBtn.addEventListener('click', async ()=>{
     const it=getCurrentItem(); if(!it) return
     const d1=Math.max(0.5,Math.min(10,Number(el.delayJaToEn.value||settings.delayJaToEn)))
     const d2=Math.max(0.5,Math.min(10,Number(el.delayBetweenQs.value||settings.delayBetweenQs)))
@@ -422,7 +435,7 @@
     await say(it.en,'en-US',settings.enVoiceURI||el.enVoice.value)
     setTimeout(()=>{ nextQuestion() }, d2*1000)
   })
-  el.checkBtn.addEventListener('click', ()=>{
+  el.checkBtn && el.checkBtn.addEventListener('click', ()=>{
     const it=getCurrentItem(); if(!it) return
     const user=getAnswerText(); const ok=normalize(user)===normalize(it.en)
     el.resultBox.textContent= ok? '正解！':'不正解…'
@@ -432,7 +445,7 @@
     renderHistory()
     el.selfEval && el.selfEval.classList.remove('hidden')
   })
-  el.clearHistBtn.addEventListener('click', ()=>{ if(confirm('履歴を全て削除しますか？')){ history=[]; save(K.HISTORY,history); renderHistory(); } })
+  el.clearHistBtn && el.clearHistBtn.addEventListener('click', ()=>{ if(confirm('履歴を全て削除しますか？')){ history=[]; save(K.HISTORY,history); renderHistory(); } })
 
   if(el.selfEval){
     el.selfEval.addEventListener('click', (e)=>{
@@ -451,10 +464,10 @@
   // History filter + search
   if(document.getElementById('historySearch')){ document.getElementById('historySearch').addEventListener('input', renderHistory); }
   if(document.getElementById('historySearchClear')){ document.getElementById('historySearchClear').addEventListener('click', ()=>{ const i=document.getElementById('historySearch'); if(i){ i.value=''; } renderHistory(); }); }
-  if(el.histFilters){ el.histFilters.addEventListener('click', (e)=>{ const b = e.target.closest('.hf-btn'); if(!b) return; historyFilter = b.dataset.filter || 'all'; Array.from(el.histFilters.querySelectorAll('.hf-btn')).forEach(x=>x.classList.toggle('active', x===b)); renderHistory(); }); }
+  if(el.histFilters){ el.histFilters && el.histFilters.addEventListener('click', (e)=>{ const b = e.target.closest('.hf-btn'); if(!b) return; historyFilter = b.dataset.filter || 'all'; Array.from(el.histFilters.querySelectorAll('.hf-btn')).forEach(x=>x.classList.toggle('active', x===b)); renderHistory(); }); }
 
   // Settings
-  el.saveSettingsBtn.addEventListener('click', ()=>{
+  el.saveSettingsBtn && el.saveSettingsBtn.addEventListener('click', ()=>{
     settings.delayJaToEn=Math.max(0.5,Math.min(10,Number(el.delayJaToEn.value)))
     settings.delayBetweenQs=Math.max(0.5,Math.min(10,Number(el.delayBetweenQs.value)))
     settings.jaVoiceURI=el.jaVoice.value||null; settings.enVoiceURI=el.enVoice.value||null
@@ -618,10 +631,10 @@
     el.catalogStatus.textContent = catalogAbort.stop ? '停止しました。' : (repeat ? 'リピート停止中…' : '完了しました。')
     [...el.catalogList.children].forEach(n=>n.classList.remove('playing'))
   }
-  el.catalogPlayAll && el.catalogPlayAll.addEventListener('click', ()=>{ if(!catalogPath){ el.catalogStatus.textContent='データセットを選択してください。'; return; } playAll(catalogPath); })
-  el.catalogStop && el.catalogStop.addEventListener('click', ()=>{ stopCatalog(); })
-  if(el.catalogSearch){ el.catalogSearch.addEventListener('input', ()=>{ catalogQuery = el.catalogSearch.value; renderCatalogList(); }); }
-  if(el.catalogSearchClear){ el.catalogSearchClear.addEventListener('click', ()=>{ catalogQuery=''; el.catalogSearch.value=''; renderCatalogList(); }); }
+  el.catalogPlayAll && el.catalogPlayAll && el.catalogPlayAll.addEventListener('click', ()=>{ if(!catalogPath){ el.catalogStatus.textContent='データセットを選択してください。'; return; } playAll(catalogPath); })
+  el.catalogStop && el.catalogStop && el.catalogStop.addEventListener('click', ()=>{ stopCatalog(); })
+  if(el.catalogSearch){ el.catalogSearch && el.catalogSearch.addEventListener('input', ()=>{ catalogQuery = el.catalogSearch.value; renderCatalogList(); }); }
+  if(el.catalogSearchClear){ el.catalogSearchClear && el.catalogSearchClear.addEventListener('click', ()=>{ catalogQuery=''; el.catalogSearch.value=''; renderCatalogList(); }); }
 
   // Settings UI & demo
   function initSettingsUI(){ el.delayJaToEn.value=settings.delayJaToEn; el.delayBetweenQs.value=settings.delayBetweenQs; }

@@ -80,3 +80,15 @@ button:active{ transform:translateY(1px); }
 
 /* Search highlight */
 mark.hl{ background:#fff3b0; padding:0 2px; border-radius:3px; }
+
+
+/* v24 safety: ensure taps go through on iPhone */
+button, .tab-btn, .token, .nav-btn, .tts-btn, .check-btn, .secondary, .primary {
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+.tab, main, .controls-row, .dataset-list, .history-list, .tree, .tree-item {
+  pointer-events: auto;
+}
+/* Caret should never block taps */
+.drop-caret { pointer-events: none; }
