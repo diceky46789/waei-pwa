@@ -1,4 +1,4 @@
-/* 和英正順アプリ v20 (Wake Lock to keep screen on during playback) */
+/* 和英正順アプリ v21 (TTS reliability + robust tokenize) */
 (function(){
   'use strict';
 
@@ -114,16 +114,19 @@
     try{ if(speechSynthesis.speaking) speechSynthesis.pause(); }catch(_ ){}
     try{ el.bgSilence && el.bgSilence.pause(); }catch(_ ){}
     if(el.catalogStatus) el.catalogStatus.textContent = '一時停止中…';
+    if('mediaSession' in navigator){ navigator.mediaSession.playbackState = 'paused'; }
   }
   function resumeCatalog(){
     catalogPaused = false;
     try{ speechSynthesis.resume(); }catch(_ ){}
     if(el.catalogBg && el.catalogBg.checked && el.bgSilence){ el.bgSilence.play().catch(()=>{}); }
+    if('mediaSession' in navigator){ navigator.mediaSession.playbackState = 'playing'; }
   }
   function stopCatalog(){
     catalogAbort.stop = true;
-    pauseCatalog();
+    try{ speechSynthesis.cancel(); }catch(_ ){}
     try{ if(el.bgSilence) { el.bgSilence.pause(); el.bgSilence.currentTime = 0; } }catch(_ ){}
+    if('mediaSession' in navigator){ navigator.mediaSession.playbackState = 'none'; }
     releaseWakeLock();
   }
 
@@ -161,16 +164,13 @@
     return rows;
   }
 
-  // Tokenize
+  // --- Robust tokenize ---
   function tokenize(en){
-    const tokens = [];
-    const parts = en.trim().split(/\s+/);
-    for(const part of parts){
-      const m = part.match(/^(.+?)([,.!?;:])?$/);
-      if(m){ const w=m[1]; if(w) tokens.push(w); if(m[2]) tokens.push(m[2]); }
-      else tokens.push(part);
-    }
-    return tokens;
+    if(!en) return [];
+    const m = en.match(/[A-Za-z0-9]+(?:['’][A-Za-z0-9]+)?|[.,!?;:()"“”‘’…—–-]/g);
+    if(m && m.length) return m;
+    // fallback
+    return en.trim().split(/\s+/).filter(Boolean);
   }
   function shuffle(a){ const b=a.slice(); for(let i=b.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [b[i],b[j]]=[b[j]]; } return b; }
 
@@ -184,18 +184,31 @@
       if(!select) return;
       select.innerHTML = '';
       list.forEach(v => { const opt=document.createElement('option'); opt.value=v.voiceURI; opt.textContent=`${v.name} (${v.lang})`; select.appendChild(opt); });
-      if(savedURI) select.value = savedURI;
+      if(savedURI && list.some(v=>v.voiceURI===savedURI)) select.value = savedURI;
     }
     fill(el.jaVoice, jaOpts, settings.jaVoiceURI);
     fill(el.enVoice, enOpts, settings.enVoiceURI);
   }
   if('speechSynthesis' in window){ loadVoices(); window.speechSynthesis.onvoiceschanged = loadVoices; }
+
+  // --- iOS audio unlock + TTS stability ---
+  let audioUnlocked = false;
+  async function unlockAudio(){
+    if(audioUnlocked) return;
+    try{ if(el.bgSilence){ await el.bgSilence.play(); el.bgSilence.pause(); el.bgSilence.currentTime = 0; } }catch(_){ }
+    audioUnlocked = true;
+  }
   function say(text, lang, uri){
-    return new Promise(resolve => {
+    return new Promise(async (resolve)=>{
+      try{ await unlockAudio(); }catch(_){ }
+      try{ speechSynthesis.cancel(); }catch(_){ }
       const u = new SpeechSynthesisUtterance(text);
       u.lang = lang;
-      if(uri){ const v = availableVoices.find(v=>v.voiceURI===uri); if(v) u.voice = v; }
-      u.onend = resolve; speechSynthesis.speak(u);
+      const v = (uri ? availableVoices.find(v=>v.voiceURI===uri) : null);
+      if(v) u.voice = v;
+      u.onend = ()=> resolve();
+      u.onerror = ()=> resolve();
+      try{ speechSynthesis.speak(u); }catch(_){ resolve(); }
     });
   }
 
@@ -217,7 +230,9 @@
     const it = getCurrentItem(); clearQA();
     if(!it){ el.jpText.textContent='「問題」タブでデータセットを選んでください。'; return; }
     el.jpText.textContent = it.jp;
-    const scrambled = shuffle(tokenize(it.en));
+    let tokens = tokenize(it.en);
+    if(!tokens.length){ tokens = it.en.split(' '); }
+    const scrambled = shuffle(tokens);
     scrambled.forEach(t=> el.wordBank.appendChild(createToken(t, 'bank')) );
     el.delaysInfo.textContent = `現在の遅延設定: 日→英 ${settings.delayJaToEn}s, 次の問題まで ${settings.delayBetweenQs}s`;
   }
@@ -320,7 +335,7 @@
   // Practice actions
   function nextQuestion(){ const ds=datasets[state.currentPath]; if(!ds) return; const ord=getOrder(state.currentPath); state.index=(state.index+1)%ord.length; save(K.STATE,state); loadCurrentQuestion(); }
   function prevQuestion(){ const ds=datasets[state.currentPath]; if(!ds) return; const ord=getOrder(state.currentPath); state.index=(state.index-1+ord.length)%ord.length; save(K.STATE,state); loadCurrentQuestion(); }
-  function getAnswerText(){ const words=[...el.answerArea.querySelectorAll('.token')].map(t=>t.textContent); return words.join(' ').replace(/\s+([,.!?;:])/g,'$1').trim(); }
+  function getAnswerText(){ const words=[...el.answerArea.querySelectorAll('.token')].map(t=>t.textContent); return words.join(' ').replace(/\s+([.,!?;:()"“”‘’…—–-])/g,'$1').trim(); }
   function normalize(s){ return (s||'').replace(/\s+/g,' ').trim(); }
 
   function pushHistory(item, user, ok){
@@ -341,7 +356,7 @@
     if(!q) return src;
     try{
       const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'), 'ig');
-      return src.replace(re, m=>`<mark class="hl">${m}</mark>`);
+      return src.replace(re, m=>`<mark class=\"hl\">${m}</mark>`);
     }catch(_ ){ return src; }
   }
   let catalogQuery = '';
@@ -373,7 +388,7 @@
       con.appendChild(top); con.appendChild(jp); con.appendChild(en); con.appendChild(user); con.appendChild(ex);
       el.historyList.appendChild(con);
     });
-    if(el.historySearchInfo){ el.historySearchInfo.textContent = `表示: ${list.length} / 全${base.length}件` + (q ? ` （検索: "${qInput.value}"）` : ''); }
+    if(el.historySearchInfo){ el.historySearchInfo.textContent = `表示: ${list.length} / 全${base.length}件` + (q ? ` （検索: \"${qInput.value}\"）` : ''); }
   }
   function switchTo(tab){ document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab)); document.querySelectorAll('.tab').forEach(sec=>sec.classList.toggle('active', sec.id===tab)); }
 
@@ -385,6 +400,7 @@
     const it=getCurrentItem(); if(!it) return;
     const d1=Math.max(0.5,Math.min(10,Number(el.delayJaToEn.value||settings.delayJaToEn)));
     const d2=Math.max(0.5,Math.min(10,Number(el.delayBetweenQs.value||settings.delayBetweenQs)));
+    await unlockAudio();
     await say(it.jp,'ja-JP',settings.jaVoiceURI||el.jaVoice.value);
     await new Promise(r=>setTimeout(r,d1*1000));
     await say(it.en,'en-US',settings.enVoiceURI||el.enVoice.value);
@@ -531,7 +547,7 @@
       el.catalogList.appendChild(con);
       shown++;
     });
-    if(el.catalogSearchInfo){ el.catalogSearchInfo.textContent = `表示: ${shown} / 全${datasets[catalogPath].items.length}件` + (catalogQuery? ` （検索: "${catalogQuery}"）` : ''); }
+    if(el.catalogSearchInfo){ el.catalogSearchInfo.textContent = `表示: ${shown} / 全${datasets[catalogPath].items.length}件` + (catalogQuery? ` （検索: \"${catalogQuery}\"）` : ''); }
   }
   function scrollCatalogTo(idx){
     const node=el.catalogList.children[idx];
@@ -544,6 +560,7 @@
     scrollCatalogTo(i);
     const d1=Math.max(0.5,Math.min(10,Number(el.delayJaToEn.value||settings.delayJaToEn)));
     while(catalogPaused && !catalogAbort.stop){ await new Promise(r=>setTimeout(r,150)); }
+    await unlockAudio();
     await say(item.jp,'ja-JP',settings.jaVoiceURI||el.jaVoice.value);
     while(catalogPaused && !catalogAbort.stop){ await new Promise(r=>setTimeout(r,150)); }
     await new Promise(r=>setTimeout(r,d1*1000));
@@ -560,6 +577,7 @@
     setMediaSession();
     if(el.catalogWake && el.catalogWake.checked){ await requestWakeLock(); }
     if(el.catalogBg && el.catalogBg.checked && el.bgSilence){ try{ await el.bgSilence.play(); }catch(_ ){} }
+    await unlockAudio();
     do{
       let order = Array.from({length: datasets[path].items.length}, (_,i)=>i);
       if(random){ order = shuffle(order); }
