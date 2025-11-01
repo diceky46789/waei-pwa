@@ -1,4 +1,4 @@
-/* 和英正順アプリ v17 (Catalog Repeat + Random) */
+/* 和英正順アプリ v18 (Catalog Repeat + Random, parse-fix) */
 (function(){
   'use strict';
 
@@ -220,7 +220,7 @@
     gaps.push({idx:0, x: items[0].rect.left - 1});
     for(let i=0;i<items.length-1;i++){
       const mid = (items[i].rect.right + items[i+1].rect.left)/2;
-      gaps.push({idx=i+1, x: mid});
+      gaps.push({idx:i+1, x: mid});
     }
     gaps.push({idx:items.length, x: items[items.length-1].rect.right + 1});
     let best=gaps[0], bestD=Math.abs(x-gaps[0].x);
@@ -294,12 +294,12 @@
     }catch(_){ return src; }
   }
   let catalogQuery = '';
-  let historyFilter = 'all';
 
   function renderHistory(){
     el.historyList.innerHTML='';
     const base = history.filter(h => historyFilter==='all' ? true : h.grade === historyFilter);
-    const q = (document.getElementById('historySearch')?.value || '').trim().toLowerCase();
+    const qInput = document.getElementById('historySearch');
+    const q = (qInput ? qInput.value : '').trim().toLowerCase();
     const list = base.filter(h => {
       if(!q) return true;
       const hay = (h.jp + ' ' + h.en + ' ' + (h.ex||'') + ' ' + (h.user||'')).toLowerCase();
@@ -323,7 +323,7 @@
       el.historyList.appendChild(con);
     });
     if(el.historySearchInfo){
-      el.historySearchInfo.textContent = `表示: ${list.length} / 全${base.length}件` + (document.getElementById('historySearch')?.value ? f' （検索: "{document.getElementById("historySearch").value}"）' : '');
+      el.historySearchInfo.textContent = `表示: ${list.length} / 全${base.length}件` + (q ? ` （検索: "${qInput.value}"）` : '');
     }
   }
   function switchTo(tab){ document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab)); document.querySelectorAll('.tab').forEach(sec=>sec.classList.toggle('active', sec.id===tab)); }
@@ -497,7 +497,7 @@
       shown++;
     });
     if(el.catalogSearchInfo){
-      el.catalogSearchInfo.textContent = `表示: ${shown} / 全${datasets[catalogPath].items.length}件` + (catalogQuery? ` （検索: "${catalogQuery}"）` : '');
+      el.catalogSearchInfo.textContent = `表示: ${shown} / 全${datasets[catalogPath].items.length}件` + (catalogQuery ? ` （検索: "${catalogQuery}"）` : '');
     }
   }
   function scrollCatalogTo(idx){
