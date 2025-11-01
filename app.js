@@ -1,4 +1,4 @@
-/* 和英正順アプリ v19 (Background playback experimental) */
+/* 和英正順アプリ v20 (Wake Lock to keep screen on during playback) */
 (function(){
   'use strict';
 
@@ -58,6 +58,7 @@
     catalogRepeat: document.getElementById('catalogRepeat'),
     catalogRandom: document.getElementById('catalogRandom'),
     catalogBg: document.getElementById('catalogBg'),
+    catalogWake: document.getElementById('catalogWake'),
     bgSilence: document.getElementById('bgSilence'),
     // History search
     historySearch: document.getElementById('historySearch'),
@@ -81,15 +82,28 @@
     el.bgSilence.volume = 0.01; // very low (avoid mute)
   }
 
-  // Media Session
+  // ---- Wake Lock (keep screen on while playing) ----
+  let wakeLock = null;
+  async function requestWakeLock(){
+    try{
+      if(!('wakeLock' in navigator)) return;
+      if(wakeLock) return;
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', ()=>{ wakeLock = null; });
+      document.addEventListener('visibilitychange', async ()=>{
+        if(document.visibilityState === 'visible' && el.catalogWake && el.catalogWake.checked && !wakeLock){
+          try{ wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', ()=>{ wakeLock=null; }); }catch(_){ }
+        }
+      });
+    }catch(_){ /* ignored */ }
+  }
+  async function releaseWakeLock(){ try{ if(wakeLock){ await wakeLock.release(); } }catch(_){ } finally{ wakeLock=null; } }
+
+  // ---- Media Session controls ----
   let catalogPaused = false;
   function setMediaSession(){
     if('mediaSession' in navigator){
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: 'データセット連続再生',
-        artist: '和英正順アプリ',
-        album: 'Catalog Player'
-      });
+      navigator.mediaSession.metadata = new MediaMetadata({ title: 'データセット連続再生', artist: '和英正順アプリ', album: 'Catalog Player' });
       try{ navigator.mediaSession.setActionHandler('play', ()=>resumeCatalog()); }catch(_){}
       try{ navigator.mediaSession.setActionHandler('pause', ()=>pauseCatalog()); }catch(_){}
       try{ navigator.mediaSession.setActionHandler('stop', ()=>stopCatalog()); }catch(_){}
@@ -104,14 +118,13 @@
   function resumeCatalog(){
     catalogPaused = false;
     try{ speechSynthesis.resume(); }catch(_ ){}
-    if(el.catalogBg && el.catalogBg.checked && el.bgSilence){
-      el.bgSilence.play().catch(()=>{});
-    }
+    if(el.catalogBg && el.catalogBg.checked && el.bgSilence){ el.bgSilence.play().catch(()=>{}); }
   }
   function stopCatalog(){
     catalogAbort.stop = true;
     pauseCatalog();
     try{ if(el.bgSilence) { el.bgSilence.pause(); el.bgSilence.currentTime = 0; } }catch(_ ){}
+    releaseWakeLock();
   }
 
   function save(key, value){ localStorage.setItem(key, JSON.stringify(value)); }
@@ -159,7 +172,7 @@
     }
     return tokens;
   }
-  function shuffle(a){ const b=a.slice(); for(let i=b.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [b[i],b[j]]=[b[j],b[i]]; } return b; }
+  function shuffle(a){ const b=a.slice(); for(let i=b.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [b[i],b[j]]=[b[j]]; } return b; }
 
   // Voices
   let availableVoices = [];
@@ -298,7 +311,7 @@
   }
 
   // Swipe
-  (function(){
+  ;(function(){
     let x0=null,y0=null,t0=0; const area=document.getElementById('qaArea');
     area.addEventListener('touchstart', (e)=>{ if(e.touches.length===1){ x0=e.touches[0].clientX; y0=e.touches[0].clientY; t0=Date.now(); } }, {passive:true});
     area.addEventListener('touchend', (e)=>{ if(x0==null) return; const dt=Date.now()-t0; const t=e.changedTouches[0]; const dx=t.clientX-x0, dy=t.clientY-y0; if(Math.abs(dx)>50 && Math.abs(dx)>Math.abs(dy) && dt<800){ if(dx<0) nextQuestion(); else prevQuestion(); } x0=y0=null; }, {passive:true});
@@ -360,9 +373,7 @@
       con.appendChild(top); con.appendChild(jp); con.appendChild(en); con.appendChild(user); con.appendChild(ex);
       el.historyList.appendChild(con);
     });
-    if(el.historySearchInfo){
-      el.historySearchInfo.textContent = `表示: ${list.length} / 全${base.length}件` + (q ? ` （検索: "${qInput.value}"）` : '');
-    }
+    if(el.historySearchInfo){ el.historySearchInfo.textContent = `表示: ${list.length} / 全${base.length}件` + (q ? ` （検索: "${qInput.value}"）` : ''); }
   }
   function switchTo(tab){ document.querySelectorAll('.tab-btn').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab)); document.querySelectorAll('.tab').forEach(sec=>sec.classList.toggle('active', sec.id===tab)); }
 
@@ -406,23 +417,9 @@
   }
 
   // History filter + search
-  if(document.getElementById('historySearch')){
-    document.getElementById('historySearch').addEventListener('input', renderHistory);
-  }
-  if(document.getElementById('historySearchClear')){
-    document.getElementById('historySearchClear').addEventListener('click', ()=>{
-      const i=document.getElementById('historySearch'); if(i){ i.value=''; }
-      renderHistory();
-    });
-  }
-  if(el.histFilters){
-    el.histFilters.addEventListener('click', (e)=>{
-      const b = e.target.closest('.hf-btn'); if(!b) return;
-      historyFilter = b.dataset.filter || 'all';
-      Array.from(el.histFilters.querySelectorAll('.hf-btn')).forEach(x=>x.classList.toggle('active', x===b));
-      renderHistory();
-    });
-  }
+  if(document.getElementById('historySearch')){ document.getElementById('historySearch').addEventListener('input', renderHistory); }
+  if(document.getElementById('historySearchClear')){ document.getElementById('historySearchClear').addEventListener('click', ()=>{ const i=document.getElementById('historySearch'); if(i){ i.value=''; } renderHistory(); }); }
+  if(el.histFilters){ el.histFilters.addEventListener('click', (e)=>{ const b = e.target.closest('.hf-btn'); if(!b) return; historyFilter = b.dataset.filter || 'all'; Array.from(el.histFilters.querySelectorAll('.hf-btn')).forEach(x=>x.classList.toggle('active', x===b)); renderHistory(); }); }
 
   // Settings
   el.saveSettingsBtn.addEventListener('click', ()=>{
@@ -534,9 +531,7 @@
       el.catalogList.appendChild(con);
       shown++;
     });
-    if(el.catalogSearchInfo){
-      el.catalogSearchInfo.textContent = `表示: ${shown} / 全${datasets[catalogPath].items.length}件` + (catalogQuery? ` （検索: "${catalogQuery}"）` : '');
-    }
+    if(el.catalogSearchInfo){ el.catalogSearchInfo.textContent = `表示: ${shown} / 全${datasets[catalogPath].items.length}件` + (catalogQuery? ` （検索: "${catalogQuery}"）` : ''); }
   }
   function scrollCatalogTo(idx){
     const node=el.catalogList.children[idx];
@@ -548,7 +543,6 @@
     [...el.catalogList.children].forEach((n,ix)=> n.classList.toggle('playing', ix===i));
     scrollCatalogTo(i);
     const d1=Math.max(0.5,Math.min(10,Number(el.delayJaToEn.value||settings.delayJaToEn)));
-    // pause wait
     while(catalogPaused && !catalogAbort.stop){ await new Promise(r=>setTimeout(r,150)); }
     await say(item.jp,'ja-JP',settings.jaVoiceURI||el.jaVoice.value);
     while(catalogPaused && !catalogAbort.stop){ await new Promise(r=>setTimeout(r,150)); }
@@ -562,19 +556,15 @@
     const d2=Math.max(0.5,Math.min(10,Number(el.delayBetweenQs.value||settings.delayBetweenQs)));
     const repeat = !!(el.catalogRepeat && el.catalogRepeat.checked);
     const random = !!(el.catalogRandom && el.catalogRandom.checked);
-    el.catalogStatus.textContent = repeat ? (random ? '連続再生中…（ランダム・リピート）' : '連続再生中…（リピート）')
-                                          : (random ? '連続再生中…（ランダム）' : '連続再生中…');
+    el.catalogStatus.textContent = repeat ? (random ? '連続再生中…（ランダム・リピート）' : '連続再生中…（リピート）') : (random ? '連続再生中…（ランダム）' : '連続再生中…');
     setMediaSession();
-    // background keepalive
-    if(el.catalogBg && el.catalogBg.checked && el.bgSilence){
-      try{ await el.bgSilence.play(); }catch(_ ){}
-    }
+    if(el.catalogWake && el.catalogWake.checked){ await requestWakeLock(); }
+    if(el.catalogBg && el.catalogBg.checked && el.bgSilence){ try{ await el.bgSilence.play(); }catch(_ ){} }
     do{
       let order = Array.from({length: datasets[path].items.length}, (_,i)=>i);
       if(random){ order = shuffle(order); }
       for(let k=0; k<order.length; k++){
         if(catalogAbort.stop){ stopFlag=true; break; }
-        // wait pause
         while(catalogPaused && !catalogAbort.stop){ await new Promise(r=>setTimeout(r,150)); }
         const i = order[k];
         await playOneAtIndex(i);
@@ -588,14 +578,13 @@
       }
       if(stopFlag || !repeat) break;
     }while(true);
-    // stop
     try{ if(el.bgSilence){ el.bgSilence.pause(); el.bgSilence.currentTime=0; } }catch(_ ){}
+    await releaseWakeLock();
     el.catalogStatus.textContent = catalogAbort.stop ? '停止しました。' : (repeat ? 'リピート停止中…' : '完了しました。');
     [...el.catalogList.children].forEach(n=>n.classList.remove('playing'));
   }
   el.catalogPlayAll && el.catalogPlayAll.addEventListener('click', ()=>{ if(!catalogPath){ el.catalogStatus.textContent='データセットを選択してください。'; return; } playAll(catalogPath); });
   el.catalogStop && el.catalogStop.addEventListener('click', ()=>{ stopCatalog(); });
-
   if(el.catalogSearch){ el.catalogSearch.addEventListener('input', ()=>{ catalogQuery = el.catalogSearch.value; renderCatalogList(); }); }
   if(el.catalogSearchClear){ el.catalogSearchClear.addEventListener('click', ()=>{ catalogQuery=''; el.catalogSearch.value=''; renderCatalogList(); }); }
 

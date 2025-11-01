@@ -90,6 +90,9 @@
         <label class="hint" style="display:flex;align-items:center;gap:6px;">
           <input type="checkbox" id="catalogBg"> 背景再生（実験）
         </label>
+        <label class="hint" style="display:flex;align-items:center;gap:6px;">
+          <input type="checkbox" id="catalogWake"> 画面ロック防止（Wake Lock）
+        </label>
       </div>
       <div class="controls-row">
         <input type="search" id="catalogSearch" placeholder="この一覧から単語を検索">
@@ -150,8 +153,8 @@
     <span>© 和英正順アプリ</span>
   </footer>
 
-  <!-- hidden keepalive audio for background (data URI silent wav) -->
-  <audio id="bgSilence" preload="auto" loop style="display:none"></audio>
+  <!-- Keep audio session active -->
+  <audio id="bgSilence" preload="auto" loop playsinline style="display:none"></audio>
 
   <script src="app.js"></script>
 </body>
