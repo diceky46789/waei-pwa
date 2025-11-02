@@ -14,22 +14,22 @@
   </header>
 
   <nav class="tabs">
-    <button class="tab-btn active" data-tab="practice">練習</button>
-    <button class="tab-btn" data-tab="problems">問題</button>
-    <button class="tab-btn" data-tab="catalog">問題一覧</button>
-    <button class="tab-btn" data-tab="history">履歴</button>
-    <button class="tab-btn" data-tab="settings">設定</button>
+    <button type="button" class="tab-btn active" data-tab="practice">練習</button>
+    <button type="button" class="tab-btn" data-tab="problems">問題</button>
+    <button type="button" class="tab-btn" data-tab="catalog">問題一覧</button>
+    <button type="button" class="tab-btn" data-tab="history">履歴</button>
+    <button type="button" class="tab-btn" data-tab="settings">設定</button>
   </nav>
 
   <main>
     <!-- Practice Tab -->
     <section id="practice" class="tab active">
       <div class="controls-row">
-        <button id="prevBtn" class="nav-btn">前へ</button>
-        <button id="nextBtn" class="nav-btn">次へ</button>
-        <button id="speakBtn" class="tts-btn">日本語→英語 読み上げ</button>
-        <button id="checkBtn" class="check-btn">Check</button>
-        <button id="resetBtn" class="secondary">リセット</button>
+        <button type="button" id="prevBtn" class="nav-btn">前へ</button>
+        <button type="button" id="nextBtn" class="nav-btn">次へ</button>
+        <button type="button" id="speakBtn" class="tts-btn">日本語→英語 読み上げ</button>
+        <button type="button" id="checkBtn" class="check-btn">Check</button>
+        <button type="button" id="resetBtn" class="secondary">リセット</button>
       </div>
 
       <div id="delaysInfo" class="hint"></div>
@@ -42,13 +42,14 @@
         </div>
         <div class="result" id="resultBox"></div>
         <div class="explain" id="explainBox"></div>
+        <!-- Self-evaluation (shown after Check) -->
         <div id="selfEval" class="self-eval hidden">
           <span class="hint">自己評価:</span>
           <div class="self-eval-buttons">
-            <button class="sev-btn sev-perfect" data-grade="perfect">完璧</button>
-            <button class="sev-btn sev-good" data-grade="good">良い</button>
-            <button class="sev-btn sev-uncertain" data-grade="uncertain">自信なし</button>
-            <button class="sev-btn sev-bad" data-grade="bad">ダメ</button>
+            <button type="button" class="sev-btn sev-perfect" data-grade="perfect">完璧</button>
+            <button type="button" class="sev-btn sev-good" data-grade="good">良い</button>
+            <button type="button" class="sev-btn sev-uncertain" data-grade="uncertain">自信なし</button>
+            <button type="button" class="sev-btn sev-bad" data-grade="bad">ダメ</button>
           </div>
         </div>
       </div>
@@ -63,7 +64,7 @@
       </label>
       <div class="flex-row gap">
         <input type="file" id="csvFiles" accept=".csv" multiple>
-        <button id="uploadCsvBtn">アップロード</button>
+        <button type="button" id="uploadCsvBtn">アップロード</button>
       </div>
       <div id="uploadLog" class="log"></div>
 
@@ -79,24 +80,13 @@
         <div id="catalogTree" class="tree"></div>
       </div>
       <div class="controls-row">
-        <button id="catalogPlayAll" class="primary">選択データセットを連続再生</button>
-        <button id="catalogStop" class="secondary">停止</button>
-        <label class="hint" style="display:flex;align-items:center;gap:6px;">
-          <input type="checkbox" id="catalogRepeat"> リピート
-        </label>
-        <label class="hint" style="display:flex;align-items:center;gap:6px;">
-          <input type="checkbox" id="catalogRandom"> ランダム
-        </label>
-        <label class="hint" style="display:flex;align-items:center;gap:6px;">
-          <input type="checkbox" id="catalogBg"> 背景再生（実験）
-        </label>
-        <label class="hint" style="display:flex;align-items:center;gap:6px;">
-          <input type="checkbox" id="catalogWake"> 画面ロック防止（Wake Lock）
-        </label>
+        <button type="button" id="catalogPlayAll" class="primary">選択データセットを連続再生</button>
+        <button type="button" id="catalogStop" class="secondary">停止</button>
       </div>
+      <!-- In-tab search -->
       <div class="controls-row">
         <input type="search" id="catalogSearch" placeholder="この一覧から単語を検索">
-        <button id="catalogSearchClear" class="secondary">クリア</button>
+        <button type="button" id="catalogSearchClear" class="secondary">クリア</button>
       </div>
       <div id="catalogSearchInfo" class="hint"></div>
 
@@ -108,17 +98,18 @@
     <section id="history" class="tab">
       <div class="controls-row">
         <div id="histFilters" class="hist-filters">
-          <button class="hf-btn active" data-filter="all">すべて</button>
-          <button class="hf-btn" data-filter="perfect">完璧</button>
-          <button class="hf-btn" data-filter="good">良い</button>
-          <button class="hf-btn" data-filter="uncertain">自信なし</button>
-          <button class="hf-btn" data-filter="bad">ダメ</button>
+          <button type="button" class="hf-btn active" data-filter="all">すべて</button>
+          <button type="button" class="hf-btn" data-filter="perfect">完璧</button>
+          <button type="button" class="hf-btn" data-filter="good">良い</button>
+          <button type="button" class="hf-btn" data-filter="uncertain">自信なし</button>
+          <button type="button" class="hf-btn" data-filter="bad">ダメ</button>
         </div>
-        <button id="clearHistBtn" class="secondary">履歴を全削除</button>
+        <button type="button" id="clearHistBtn" class="secondary">履歴を全削除</button>
       </div>
+      <!-- In-tab search -->
       <div class="controls-row">
         <input type="search" id="historySearch" placeholder="履歴から単語を検索">
-        <button id="historySearchClear" class="secondary">クリア</button>
+        <button type="button" id="historySearchClear" class="secondary">クリア</button>
       </div>
       <div id="historySearchInfo" class="hint"></div>
 
@@ -144,7 +135,7 @@
           <select id="enVoice"></select>
         </label>
       </div>
-      <button id="saveSettingsBtn" class="primary">保存</button>
+      <button type="button" id="saveSettingsBtn" class="primary">保存</button>
       <div id="settingsSaved" class="hint"></div>
     </section>
   </main>
@@ -152,9 +143,6 @@
   <footer class="app-footer">
     <span>© 和英正順アプリ</span>
   </footer>
-
-  <!-- Keep audio session active -->
-  <audio id="bgSilence" preload="auto" loop playsinline style="display:none"></audio>
 
   <script src="app.js"></script>
 </body>
