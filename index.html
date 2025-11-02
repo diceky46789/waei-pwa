@@ -9,10 +9,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
 </head>
 <body>
-  <header class="app-header">
-    <h1>和英正順アプリ</h1>
-  </header>
-
+  <header class="app-header"><h1>和英正順アプリ</h1></header>
   <nav class="tabs">
     <button type="button" class="tab-btn active" data-tab="practice">練習</button>
     <button type="button" class="tab-btn" data-tab="problems">問題</button>
@@ -20,9 +17,7 @@
     <button type="button" class="tab-btn" data-tab="history">履歴</button>
     <button type="button" class="tab-btn" data-tab="settings">設定</button>
   </nav>
-
   <main>
-    <!-- Practice Tab -->
     <section id="practice" class="tab active">
       <div class="controls-row">
         <button type="button" id="prevBtn" class="nav-btn">前へ</button>
@@ -31,18 +26,15 @@
         <button type="button" id="checkBtn" class="check-btn">Check</button>
         <button type="button" id="resetBtn" class="secondary">リセット</button>
       </div>
-
       <div id="delaysInfo" class="hint"></div>
-
       <div id="qaArea" class="qa-area">
         <div class="jp bold" id="jpText">「問題」タブでデータセットを選んでください。</div>
         <div class="bank-and-answer">
-          <div class="word-bank" id="wordBank" aria-label="単語候補"></div>
-          <div class="answer-area" id="answerArea" aria-label="解答欄"></div>
+          <div class="word-bank" id="wordBank"></div>
+          <div class="answer-area" id="answerArea"></div>
         </div>
         <div class="result" id="resultBox"></div>
         <div class="explain" id="explainBox"></div>
-        <!-- Self-evaluation (shown after Check) -->
         <div id="selfEval" class="self-eval hidden">
           <span class="hint">自己評価:</span>
           <div class="self-eval-buttons">
@@ -55,11 +47,9 @@
       </div>
     </section>
 
-    <!-- Problems Tab -->
     <section id="problems" class="tab">
       <h2>CSVアップロード（入れ子フォルダ対応）</h2>
-      <p class="hint">CSV 形式: 1列目=日本語(jp), 2列目=英語(en), 3列目=解説(ex)。ヘッダー jp,en,ex を推奨。</p>
-      <label class="block">フォルダ（例: 医療/ALT/基礎）:
+      <label class="block">フォルダ:
         <input type="text" id="folderPath" placeholder="フォルダ/サブフォルダ">
       </label>
       <div class="flex-row gap">
@@ -67,34 +57,30 @@
         <button type="button" id="uploadCsvBtn">アップロード</button>
       </div>
       <div id="uploadLog" class="log"></div>
-
-      <h3>データセット一覧（タップで練習開始）</h3>
+      <h3>データセット一覧</h3>
       <div id="datasetList" class="dataset-list"></div>
     </section>
 
-    <!-- Catalog Tab -->
     <section id="catalog" class="tab">
-      <h2>問題一覧（データセットの連続読み上げ）</h2>
-      <div class="dataset-picker">
-        <h3>データセット選択</h3>
-        <div id="catalogTree" class="tree"></div>
-      </div>
+      <h2>問題一覧（連続読み上げ）</h2>
+      <div id="catalogTree" class="tree"></div>
       <div class="controls-row">
         <button type="button" id="catalogPlayAll" class="primary">選択データセットを連続再生</button>
         <button type="button" id="catalogStop" class="secondary">停止</button>
+        <label class="hint"><input type="checkbox" id="catalogRepeat"> リピート</label>
+        <label class="hint"><input type="checkbox" id="catalogRandom"> ランダム</label>
+        <label class="hint"><input type="checkbox" id="catalogBg"> 背景再生（実験）</label>
+        <label class="hint"><input type="checkbox" id="catalogWake"> 画面ロック防止（Wake Lock）</label>
       </div>
-      <!-- In-tab search -->
       <div class="controls-row">
         <input type="search" id="catalogSearch" placeholder="この一覧から単語を検索">
         <button type="button" id="catalogSearchClear" class="secondary">クリア</button>
       </div>
       <div id="catalogSearchInfo" class="hint"></div>
-
       <div id="catalogStatus" class="hint"></div>
       <div id="catalogList" class="history-list"></div>
     </section>
 
-    <!-- History Tab -->
     <section id="history" class="tab">
       <div class="controls-row">
         <div id="histFilters" class="hist-filters">
@@ -106,44 +92,30 @@
         </div>
         <button type="button" id="clearHistBtn" class="secondary">履歴を全削除</button>
       </div>
-      <!-- In-tab search -->
       <div class="controls-row">
         <input type="search" id="historySearch" placeholder="履歴から単語を検索">
         <button type="button" id="historySearchClear" class="secondary">クリア</button>
       </div>
       <div id="historySearchInfo" class="hint"></div>
-
       <div id="historyList" class="history-list"></div>
     </section>
 
-    <!-- Settings Tab -->
     <section id="settings" class="tab">
       <h2>読み上げ設定</h2>
       <div class="grid-2">
-        <label>日本語→英語の遅延（秒, 0.5〜10）
-          <input type="number" id="delayJaToEn" min="0.5" max="10" step="0.5" value="1.0">
-        </label>
-        <label>次の日本語開始までの遅延（秒, 0.5〜10）
-          <input type="number" id="delayBetweenQs" min="0.5" max="10" step="0.5" value="1.0">
-        </label>
+        <label>日本語→英語の遅延（秒）<input type="number" id="delayJaToEn" min="0.5" max="10" step="0.5" value="1.0"></label>
+        <label>次の日本語までの遅延（秒）<input type="number" id="delayBetweenQs" min="0.5" max="10" step="0.5" value="1.0"></label>
       </div>
       <div class="grid-2">
-        <label>日本語音声
-          <select id="jaVoice"></select>
-        </label>
-        <label>英語音声
-          <select id="enVoice"></select>
-        </label>
+        <label>日本語音声<select id="jaVoice"></select></label>
+        <label>英語音声<select id="enVoice"></select></label>
       </div>
       <button type="button" id="saveSettingsBtn" class="primary">保存</button>
       <div id="settingsSaved" class="hint"></div>
     </section>
   </main>
-
-  <footer class="app-footer">
-    <span>© 和英正順アプリ</span>
-  </footer>
-
+  <footer class="app-footer"><span>© 和英正順アプリ</span></footer>
+  <audio id="bgSilence" preload="auto" loop playsinline style="display:none"></audio>
   <script src="app.js"></script>
 </body>
 </html>
