@@ -80,9 +80,11 @@
         <div id="catalogTree" class="tree"></div>
       </div>
       <div class="controls-row">
-        <button id="catalogPlayAll" class="primary">選択データセットを連続再生</button>
-        <button id="catalogStop" class="secondary">停止</button>
-      </div>
+  <button id="catalogPlayAll" class="primary">選択データセットを連続再生</button>
+  <button id="catalogStop" class="secondary">停止</button>
+  <label class="inline"><input type="checkbox" id="catalogRepeat"> 全体をリピート</label>
+  <label class="inline"><input type="checkbox" id="catalogShuffle"> ランダム再生</label>
+</div>
       <!-- In-tab search -->
       <div class="controls-row">
         <input type="search" id="catalogSearch" placeholder="この一覧から単語を検索">
@@ -137,6 +139,12 @@
       </div>
       <button id="saveSettingsBtn" class="primary">保存</button>
       <div id="settingsSaved" class="hint"></div>
+    <h2>動作設定</h2>
+<div class="grid-2">
+  <label><input type="checkbox" id="preventSleepToggle"> このアプリ使用中はスリープしない</label>
+  <label><input type="checkbox" id="bgAudioToggle"> バックグラウンド再生を有効にする</label>
+</div>
+<p class="hint">バックグラウンド再生をオンにすると、無音の音声を継続再生して他アプリ使用中でも読み上げが継続しやすくなります（音は鳴りません）。</p>
     </section>
   </main>
 
@@ -145,5 +153,8 @@
   </footer>
 
   <script src="app.js"></script>
+<audio id="bgAudio" loop preload="auto">
+  <source src="silence.wav" type="audio/wav">
+</audio>
 </body>
 </html>

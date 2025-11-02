@@ -40,6 +40,8 @@
     histFilters: document.getElementById('histFilters'),
     // Settings
     delayJaToEn: document.getElementById('delayJaToEn'),
+    preventSleepToggle: document.getElementById('preventSleepToggle'),
+    bgAudioToggle: document.getElementById('bgAudioToggle'),
     delayBetweenQs: document.getElementById('delayBetweenQs'),
     jaVoice: document.getElementById('jaVoice'),
     enVoice: document.getElementById('enVoice'),
@@ -48,6 +50,8 @@
     delaysInfo: document.getElementById('delaysInfo'),
     // Catalog
     catalogTree: document.getElementById('catalogTree'),
+    catalogRepeat: document.getElementById('catalogRepeat'),
+    catalogShuffle: document.getElementById('catalogShuffle'),
     catalogList: document.getElementById('catalogList'),
     catalogPlayAll: document.getElementById('catalogPlayAll'),
     catalogStop: document.getElementById('catalogStop'),
@@ -59,12 +63,13 @@
     historySearch: document.getElementById('historySearch'),
     historySearchClear: document.getElementById('historySearchClear'),
     historySearchInfo: document.getElementById('historySearchInfo'),
+    bgAudio: document.getElementById('bgAudio'),
     // Self eval
     selfEval: document.getElementById('selfEval')
   };
 
   let datasets = load(K.DATASETS) || {};
-  let settings = Object.assign({delayJaToEn:1, delayBetweenQs:1, jaVoiceURI:null, enVoiceURI:null}, load(K.SETTINGS) || {});
+  let settings = Object.assign({delayJaToEn:1, delayBetweenQs:1, jaVoiceURI:null, enVoiceURI:null, preventSleep:false, bgAudio:false}, load(K.SETTINGS) || {});
   let history = load(K.HISTORY) || [];
   let state = Object.assign({currentPath:null, index:0}, load(K.STATE) || {});
   let orderCache = {};
@@ -135,6 +140,32 @@
   }
   if('speechSynthesis' in window){ loadVoices(); window.speechSynthesis.onvoiceschanged = loadVoices; }
   function say(text, lang, uri){
+// --- Screen Wake Lock & Background Audio helpers ---
+let wakeLock = null;
+async function requestWakeLock(){
+  try{
+    if('wakeLock' in navigator){
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener && wakeLock.addEventListener('release', ()=>{});
+    }
+  }catch(_){ /* ignore */ }
+}
+async function releaseWakeLock(){
+  try{ if(wakeLock){ await wakeLock.release(); wakeLock=null; } }catch(_){}
+}
+async function ensureBgAudio(on){
+  const a = el.bgAudio;
+  if(!a) return;
+  if(on){
+    try{
+      a.currentTime = 0;
+      await a.play();
+    }catch(_){ /* user gesture may be required */ }
+  }else{
+    try{ a.pause(); }catch(_){}
+  }
+}
+
     return new Promise(resolve => {
       const u = new SpeechSynthesisUtterance(text);
       u.lang = lang;
@@ -385,7 +416,29 @@
     settings.jaVoiceURI=el.jaVoice.value||null; settings.enVoiceURI=el.enVoice.value||null;
     save(K.SETTINGS,settings); el.settingsSaved.textContent='保存しました。'; setTimeout(()=>el.settingsSaved.textContent='',1500);
     el.delaysInfo.textContent = `現在の遅延設定: 日→英 ${settings.delayJaToEn}s, 次の問題まで ${settings.delayBetweenQs}s`;
+  
+
+settings.preventSleep = !!(el.preventSleepToggle && el.preventSleepToggle.checked);
+settings.bgAudio = !!(el.bgAudioToggle && el.bgAudioToggle.checked);
+if(settings.preventSleep){ requestWakeLock(); } else { releaseWakeLock(); }
+ensureBgAudio(settings.bgAudio);
+});
+
+if(el.preventSleepToggle){
+  el.preventSleepToggle.addEventListener('change', ()=>{
+    settings.preventSleep = !!el.preventSleepToggle.checked;
+    save(K.SETTINGS, settings);
+    if(settings.preventSleep){ requestWakeLock(); } else { releaseWakeLock(); }
   });
+}
+if(el.bgAudioToggle){
+  el.bgAudioToggle.addEventListener('change', ()=>{
+    settings.bgAudio = !!el.bgAudioToggle.checked;
+    save(K.SETTINGS, settings);
+    ensureBgAudio(settings.bgAudio);
+  });
+}
+
 
   // Upload & Dataset list (with delete)
   el.uploadCsvBtn.addEventListener('click', async ()=>{
@@ -515,23 +568,35 @@
     await say(item.en,'en-US',settings.enVoiceURI||el.enVoice.value);
   }
   async function playAll(path){
-    if(!path || !datasets[path] || !datasets[path].items.length){ el.catalogStatus.textContent='再生するデータがありません。'; return; }
-    el.catalogStatus.textContent='連続再生中…'; catalogAbort.stop=false;
-    const d2=Math.max(0.5,Math.min(10,Number(el.delayBetweenQs.value||settings.delayBetweenQs)));
-    for(let i=0;i<datasets[path].items.length;i++){
-      if(catalogAbort.stop){ el.catalogStatus.textContent='停止しました。'; highlightCatalogPlaying(-1); return; }
-      await playOneAtIndex(i);
-      if(i<datasets[path].items.length-1){ await new Promise(r=>setTimeout(r,d2*1000)); }
-    }
-    el.catalogStatus.textContent='完了しました。'; highlightCatalogPlaying(-1);
+  if(!path || !datasets[path] || !datasets[path].items.length){ el.catalogStatus.textContent='再生するデータがありません。'; return; }
+  el.catalogStatus.textContent='連続再生中…'; catalogAbort.stop=false;
+  const d2=Math.max(0.5,Math.min(10,Number(el.delayBetweenQs.value||settings.delayBetweenQs)));
+
+  const N = datasets[path].items.length;
+  function buildOrder(){
+    let arr = [...Array(N).keys()];
+    if(el.catalogShuffle && el.catalogShuffle.checked){ arr = shuffle(arr); }
+    return arr;
   }
+
+  do{
+    const order = buildOrder();
+    for(let i=0;i<order.length;i++){
+      if(catalogAbort.stop){ el.catalogStatus.textContent='停止しました。'; highlightCatalogPlaying(-1); return; }
+      await playOneAtIndex(order[i]);
+      if(i<order.length-1){ await new Promise(r=>setTimeout(r,d2*1000)); }
+    }
+  }while(el.catalogRepeat && el.catalogRepeat.checked && !catalogAbort.stop);
+
+  el.catalogStatus.textContent='完了しました。'; highlightCatalogPlaying(-1);
+}
   el.catalogPlayAll && el.catalogPlayAll.addEventListener('click', ()=>{ if(!catalogPath){ el.catalogStatus.textContent='データセットを選択してください。'; return; } playAll(catalogPath); });
   el.catalogStop && el.catalogStop.addEventListener('click', ()=>{ catalogAbort.stop=true; });
   if(el.catalogSearch){ el.catalogSearch.addEventListener('input', ()=>{ catalogQuery = el.catalogSearch.value; renderCatalogList(); }); }
   if(el.catalogSearchClear){ el.catalogSearchClear.addEventListener('click', ()=>{ catalogQuery=''; el.catalogSearch.value=''; renderCatalogList(); }); }
 
   // Settings UI & demo
-  function initSettingsUI(){ el.delayJaToEn.value=settings.delayJaToEn; el.delayBetweenQs.value=settings.delayBetweenQs; }
+  function initSettingsUI(){ el.delayJaToEn.value=settings.delayJaToEn; el.delayBetweenQs.value=settings.delayBetweenQs; if(el.preventSleepToggle) el.preventSleepToggle.checked = !!settings.preventSleep; if(el.bgAudioToggle) el.bgAudioToggle.checked = !!settings.bgAudio; }
   function ensureDemoData(){
     if(Object.keys(datasets).length) return;
     datasets["デモ/医療/ALT基礎"]={ mode:'ordered', items:[
@@ -542,10 +607,22 @@
     save(K.DATASETS,datasets);
   }
   function refreshAll(){ refreshDatasetsUI(); renderHistory(); el.delaysInfo.textContent = `現在の遅延設定: 日→英 ${settings.delayJaToEn}s, 次の問題まで ${settings.delayBetweenQs}s`; }
-  function start(){
-    ensureDemoData(); initSettingsUI();
+  function start(){ensureDemoData(); initSettingsUI();
     if(!state.currentPath){ const first=Object.keys(datasets)[0]; if(first){ state.currentPath=first; state.index=0; save(K.STATE,state);} }
     loadCurrentQuestion(); refreshAll(); try{ renderCatalogTree(); }catch(e){}
+
+if(settings.preventSleep){ requestWakeLock(); }
+if(settings.bgAudio){ ensureBgAudio(true); }
+
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState === 'visible'){
+    if(settings.preventSleep){ requestWakeLock(); }
+  }else{
+    releaseWakeLock();
+  }
+});
+window.addEventListener('beforeunload', ()=>{ releaseWakeLock(); ensureBgAudio(false); });
+
   }
   start();
 
