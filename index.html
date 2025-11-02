@@ -69,8 +69,8 @@
         <button type="button" id="catalogStop" class="secondary">停止</button>
         <label class="hint"><input type="checkbox" id="catalogRepeat"> リピート</label>
         <label class="hint"><input type="checkbox" id="catalogRandom"> ランダム</label>
-        <label class="hint"><input type="checkbox" id="catalogBg"> 背景再生（実験）</label>
-        <label class="hint"><input type="checkbox" id="catalogWake"> 画面ロック防止（Wake Lock）</label>
+        <label class="hint"><input type="checkbox" id="catalogBg"> バックグラウンド再生</label>
+        <label class="hint"><input type="checkbox" id="catalogWake"> スリープ防止</label>
       </div>
       <div class="controls-row">
         <input type="search" id="catalogSearch" placeholder="この一覧から単語を検索">
@@ -115,7 +115,10 @@
     </section>
   </main>
   <footer class="app-footer"><span>© 和英正順アプリ</span></footer>
+
   <audio id="bgSilence" preload="auto" loop playsinline style="display:none"></audio>
+  <video id="noSleepVideo" playsinline muted loop style="position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;"></video>
+
   <script src="app.js"></script>
 </body>
 </html>
